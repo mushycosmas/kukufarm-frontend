@@ -1,0 +1,14 @@
+import React, {useState} from 'react';
+import {Modal,Button} from 'react-bootstrap';
+import PageHeader from '../components/common/PageHeader';import StatCard from '../components/dashboard/StatCard';
+import {eggs as initial} from '../data/mockData';
+export default function EggProduction(){
+ const [data,setData]=useState(initial);const [show,setShow]=useState(false);const [form,setForm]=useState({date:'2026-09-15',flock:'FL-001',good:'',broken:'',dirty:''});
+ const save=()=>{let g=+form.good||0,b=+form.broken||0,d=+form.dirty||0;setData([{...form,id:Date.now(),good:g,broken:b,dirty:d,total:g+b+d},...data]);setShow(false)};
+ const total=data.reduce((s,x)=>s+x.good,0);
+ return <><PageHeader title="Egg Production" subtitle="Record and monitor daily egg production." action={<button className="btn btn-success" onClick={()=>setShow(true)}><i className="bi bi-plus-lg me-2"/>Record Production</button>}/>
+ <div className="stats-grid"><StatCard title="Today's Eggs" value="4,380" subtitle="Good eggs" icon="bi-egg"/><StatCard title="Good Eggs" value={total.toLocaleString()} subtitle="Recorded period" icon="bi-check-circle-fill" className="egg"/><StatCard title="Broken Eggs" value="94" subtitle="Recorded period" icon="bi-x-circle-fill" className="mortality"/><StatCard title="Production Rate" value="83.6%" subtitle="Average today" icon="bi-graph-up-arrow" className="profit"/></div>
+ <div className="table-card"><div className="table-responsive"><table className="table align-middle"><thead><tr><th>Date</th><th>Flock</th><th>Good Eggs</th><th>Broken</th><th>Dirty</th><th>Total</th></tr></thead><tbody>{data.map(x=><tr key={x.id}><td>{x.date}</td><td><span className="record-link">{x.flock}</span></td><td><strong>{x.good.toLocaleString()}</strong></td><td>{x.broken}</td><td>{x.dirty}</td><td><strong>{x.total.toLocaleString()}</strong></td></tr>)}</tbody></table></div></div>
+ <Modal show={show} onHide={()=>setShow(false)} centered><Modal.Header closeButton><Modal.Title>Record Egg Production</Modal.Title></Modal.Header><Modal.Body><div className="row g-3">{[['date','Date','date'],['good','Good Eggs','number'],['broken','Broken Eggs','number'],['dirty','Dirty Eggs','number']].map(([k,l,t])=><div className="col-md-6" key={k}><label className="form-label">{l}</label><input type={t} className="form-control" value={form[k]} onChange={e=>setForm({...form,[k]:e.target.value})}/></div>)}<div className="col-12"><label className="form-label">Flock</label><select className="form-select" value={form.flock} onChange={e=>setForm({...form,flock:e.target.value})}><option>FL-001</option><option>FL-002</option><option>FL-003</option></select></div></div></Modal.Body><Modal.Footer><Button variant="light" onClick={()=>setShow(false)}>Cancel</Button><Button variant="success" onClick={save}>Save Record</Button></Modal.Footer></Modal>
+ </>;
+}
