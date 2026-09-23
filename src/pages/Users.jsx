@@ -1,114 +1,19 @@
-import React, { useEffect, useMemo, useState } from "react";
-import PageHeader from "../components/common/PageHeader";
+import React, { useEffect, useState } from "react";
 import api from "../services/api";
 
 const initialForm = {
   username: "",
+  email: "",
   first_name: "",
   last_name: "",
-  email: "",
   phone: "",
   job_title: "",
-  role: "",
+  role_id: "",
   password: "",
   active: true,
 };
 
-function getList(data) {
-  if (Array.isArray(data)) return data;
-
-  if (Array.isArray(data?.results)) {
-    return data.results;
-  }
-
-  return [];
-}
-
-function extractError(error) {
-  const data = error?.response?.data;
-
-  if (!data) {
-    return error?.message || "Something went wrong.";
-  }
-
-  if (typeof data === "string") {
-    return data;
-  }
-
-  if (data.detail) {
-    return data.detail;
-  }
-
-  if (typeof data === "object") {
-    return Object.entries(data)
-      .map(([field, message]) => {
-        const value = Array.isArray(message)
-          ? message.join(", ")
-          : String(message);
-
-        return `${field}: ${value}`;
-      })
-      .join(" | ");
-  }
-
-  return "Something went wrong.";
-}
-
-function getUserName(user) {
-  const fullName = `${user?.first_name || ""} ${
-    user?.last_name || ""
-  }`.trim();
-
-  return fullName || user?.username || "Unknown User";
-}
-
-function getInitial(user) {
-  const name = getUserName(user);
-
-  return name.charAt(0).toUpperCase() || "U";
-}
-
-function getRole(user) {
-  return (
-    user?.profile?.role ||
-    user?.role ||
-    ""
-  );
-}
-
-function getRoleLabel(user, roles) {
-  const role = getRole(user);
-
-  const found = roles.find((item) => item.value === role);
-
-  return found?.label || role || "No Role";
-}
-
-function isUserActive(user) {
-  if (typeof user?.profile?.active === "boolean") {
-    return user.profile.active;
-  }
-
-  if (typeof user?.active === "boolean") {
-    return user.active;
-  }
-
-  return user?.is_active !== false;
-}
-
-function formatDate(value) {
-  if (!value) return "-";
-
-  const date = new Date(value);
-
-  if (Number.isNaN(date.getTime())) {
-    return value;
-  }
-
-  return date.toLocaleDateString();
-}
-
-export default function Users() {
+function Users() {
   const [users, setUsers] = useState([]);
   const [roles, setRoles] = useState([]);
 
@@ -120,11 +25,14 @@ export default function Users() {
 
   const [search, setSearch] = useState("");
 
-  const [showForm, setShowForm] = useState(false);
-  const [editingId, setEditingId] = useState(null);
+  const [showModal, setShowModal] = useState(false);
+  const [editingUser, setEditingUser] = useState(null);
 
   const [form, setForm] = useState(initialForm);
 
+  // --------------------------------------------------
+  // Load users
+  // --------------------------------------------------
   const loadUsers = async () => {
     try {
       setLoading(true);
@@ -132,301 +40,367 @@ export default function Users() {
 
       const response = await api.get("/accounts/users/");
 
-      setUsers(getList(response.data));
+      const data = response.data;
+
+      if (Array.isArray(data)) {
+        setUsers(data);
+      } else if (Array.isArray(data.results)) {
+        setUsers(data.results);
+      } else {
+        setUsers([]);
+      }
     } catch (err) {
-      setError(extractError(err));
+      console.error("Failed to load users:", err);
+
+      setError(
+        err.response?.data?.detail ||
+          "Unable to load users. Please make sure the Django API is running."
+      );
     } finally {
       setLoading(false);
     }
   };
 
+  // --------------------------------------------------
+  // Load roles
+  // --------------------------------------------------
   const loadRoles = async () => {
     try {
-      const response = await api.get("/auth/roles/");
+      const response = await api.get("/accounts/roles/");
 
-      const roleList = getList(response.data);
+      const data = response.data;
 
-      setRoles(roleList);
-
-      if (roleList.length > 0) {
-        setForm((current) => ({
-          ...current,
-          role: current.role || roleList[0].value,
-        }));
+      if (Array.isArray(data)) {
+        setRoles(data);
+      } else if (Array.isArray(data.results)) {
+        setRoles(data.results);
+      } else {
+        setRoles([]);
       }
     } catch (err) {
-      setError(extractError(err));
+      console.error("Failed to load roles:", err);
+
+      setError(
+        err.response?.data?.detail ||
+          "Unable to load system roles."
+      );
     }
   };
 
+  // --------------------------------------------------
+  // Initial load
+  // --------------------------------------------------
   useEffect(() => {
     loadUsers();
     loadRoles();
   }, []);
 
-  const filteredUsers = useMemo(() => {
-    const keyword = search.trim().toLowerCase();
-
-    if (!keyword) {
-      return users;
-    }
-
-    return users.filter((user) => {
-      const values = [
-        user?.username,
-        user?.first_name,
-        user?.last_name,
-        user?.email,
-        user?.profile?.phone,
-        user?.profile?.job_title,
-        getRole(user),
-      ];
-
-      return values.some((value) =>
-        String(value || "")
-          .toLowerCase()
-          .includes(keyword)
-      );
-    });
-  }, [users, search]);
-
-  const totalUsers = users.length;
-
-  const activeUsers = users.filter((user) =>
-    isUserActive(user)
-  ).length;
-
-  const inactiveUsers = totalUsers - activeUsers;
-
-  const openCreateForm = () => {
-    setEditingId(null);
-
-    setForm({
-      ...initialForm,
-      role: roles[0]?.value || "",
-    });
-
-    setError("");
-    setSuccess("");
-    setShowForm(true);
-  };
-
-  const openEditForm = (user) => {
-    setEditingId(user.id);
-
-    setForm({
-      username: user?.username || "",
-      first_name: user?.first_name || "",
-      last_name: user?.last_name || "",
-      email: user?.email || "",
-      phone: user?.profile?.phone || user?.phone || "",
-      job_title:
-        user?.profile?.job_title ||
-        user?.job_title ||
-        "",
-      role: getRole(user),
-      password: "",
-      active: isUserActive(user),
-    });
-
-    setError("");
-    setSuccess("");
-    setShowForm(true);
-  };
-
-  const closeForm = () => {
-    if (saving) return;
-
-    setShowForm(false);
-    setEditingId(null);
-    setForm({
-      ...initialForm,
-      role: roles[0]?.value || "",
-    });
-  };
-
+  // --------------------------------------------------
+  // Handle form input
+  // --------------------------------------------------
   const handleChange = (event) => {
     const { name, value, type, checked } = event.target;
 
-    setForm((current) => ({
-      ...current,
+    setForm((previous) => ({
+      ...previous,
       [name]: type === "checkbox" ? checked : value,
     }));
   };
 
+  // --------------------------------------------------
+  // Open Add User modal
+  // --------------------------------------------------
+  const openAddModal = () => {
+    setEditingUser(null);
+
+    setForm({
+      ...initialForm,
+    });
+
+    setError("");
+    setSuccess("");
+
+    setShowModal(true);
+  };
+
+  // --------------------------------------------------
+  // Open Edit User modal
+  // --------------------------------------------------
+  const openEditModal = (user) => {
+    setEditingUser(user);
+
+    const roleId =
+      user.role_id ??
+      user.role?.id ??
+      "";
+
+    setForm({
+      username: user.username || "",
+      email: user.email || "",
+      first_name: user.first_name || "",
+      last_name: user.last_name || "",
+      phone: user.phone || "",
+      job_title: user.job_title || "",
+      role_id: roleId ? String(roleId) : "",
+      password: "",
+      active:
+        typeof user.active === "boolean"
+          ? user.active
+          : user.is_active !== false,
+    });
+
+    setError("");
+    setSuccess("");
+
+    setShowModal(true);
+  };
+
+  // --------------------------------------------------
+  // Close modal
+  // --------------------------------------------------
+  const closeModal = () => {
+    if (saving) {
+      return;
+    }
+
+    setShowModal(false);
+    setEditingUser(null);
+    setForm(initialForm);
+    setError("");
+  };
+
+  // --------------------------------------------------
+  // Save user
+  // --------------------------------------------------
   const saveUser = async (event) => {
     event.preventDefault();
 
     setError("");
     setSuccess("");
 
-    const username = form.username.trim();
-
-    if (!username) {
+    if (!form.username.trim()) {
       setError("Username is required.");
       return;
     }
 
-    if (!form.email.trim()) {
-      setError("Email is required.");
-      return;
-    }
-
-    if (!form.role) {
+    if (!form.role_id) {
       setError("Please select a role.");
       return;
     }
 
-    if (!editingId && !form.password) {
+    if (!editingUser && !form.password.trim()) {
       setError("Password is required when creating a user.");
       return;
-    }
-
-    if (form.password && form.password.length < 8) {
-      setError("Password must be at least 8 characters.");
-      return;
-    }
-
-    const payload = {
-      username,
-      first_name: form.first_name.trim(),
-      last_name: form.last_name.trim(),
-      email: form.email.trim(),
-      phone: form.phone.trim(),
-      job_title: form.job_title.trim(),
-      role: form.role,
-      active: form.active,
-    };
-
-    /*
-     * Password is only sent when entered.
-     *
-     * This is important when editing because leaving the
-     * password field empty should keep the existing password.
-     */
-    if (form.password.trim()) {
-      payload.password = form.password;
     }
 
     try {
       setSaving(true);
 
-      if (editingId) {
-        await api.patch(
-          `/accounts/users/${editingId}/`,
+      const payload = {
+        username: form.username.trim(),
+        first_name: form.first_name.trim(),
+        last_name: form.last_name.trim(),
+        email: form.email.trim(),
+        phone: form.phone.trim(),
+        job_title: form.job_title.trim(),
+        role_id: Number(form.role_id),
+        active: form.active,
+      };
+
+      // Password is only sent when supplied.
+      if (form.password.trim()) {
+        payload.password = form.password;
+      }
+
+      if (editingUser) {
+        await api.put(
+          `/accounts/users/${editingUser.id}/`,
           payload
         );
 
         setSuccess("User updated successfully.");
       } else {
-        await api.post("/accounts/users/", payload);
+        await api.post(
+          "/accounts/users/",
+          payload
+        );
 
         setSuccess("User created successfully.");
       }
 
       await loadUsers();
 
-      setShowForm(false);
-      setEditingId(null);
-
-      setForm({
-        ...initialForm,
-        role: roles[0]?.value || "",
-      });
+      setTimeout(() => {
+        setShowModal(false);
+        setEditingUser(null);
+        setForm(initialForm);
+        setSuccess("");
+      }, 700);
     } catch (err) {
-      setError(extractError(err));
+      console.error("Failed to save user:", err);
+
+      const responseData = err.response?.data;
+
+      let message =
+        "Unable to save user. Please check the information and try again.";
+
+      if (responseData) {
+        if (typeof responseData.detail === "string") {
+          message = responseData.detail;
+        } else if (typeof responseData === "string") {
+          message = responseData;
+        } else if (typeof responseData === "object") {
+          const messages = [];
+
+          Object.entries(responseData).forEach(
+            ([field, value]) => {
+              if (Array.isArray(value)) {
+                messages.push(
+                  `${field}: ${value.join(", ")}`
+                );
+              } else if (typeof value === "string") {
+                messages.push(
+                  `${field}: ${value}`
+                );
+              }
+            }
+          );
+
+          if (messages.length > 0) {
+            message = messages.join(" | ");
+          }
+        }
+      }
+
+      setError(message);
     } finally {
       setSaving(false);
     }
   };
 
+  // --------------------------------------------------
+  // Delete user
+  // --------------------------------------------------
   const deleteUser = async (user) => {
-    const name = getUserName(user);
-
     const confirmed = window.confirm(
-      `Are you sure you want to delete "${name}"?`
+      `Are you sure you want to delete user "${user.username}"?`
     );
 
-    if (!confirmed) return;
+    if (!confirmed) {
+      return;
+    }
 
     try {
       setError("");
       setSuccess("");
 
-      await api.delete(`/accounts/users/${user.id}/`);
+      await api.delete(
+        `/accounts/users/${user.id}/`
+      );
 
       setSuccess("User deleted successfully.");
 
       await loadUsers();
+
+      setTimeout(() => {
+        setSuccess("");
+      }, 2500);
     } catch (err) {
-      setError(extractError(err));
-    }
-  };
+      console.error("Failed to delete user:", err);
 
-  const toggleUserStatus = async (user) => {
-    const currentStatus = isUserActive(user);
-
-    const confirmed = window.confirm(
-      `${currentStatus ? "Deactivate" : "Activate"} ${getUserName(
-        user
-      )}?`
-    );
-
-    if (!confirmed) return;
-
-    try {
-      setError("");
-      setSuccess("");
-
-      await api.patch(`/accounts/users/${user.id}/`, {
-        active: !currentStatus,
-      });
-
-      setSuccess(
-        `User ${
-          currentStatus ? "deactivated" : "activated"
-        } successfully.`
+      setError(
+        err.response?.data?.detail ||
+          "Unable to delete user."
       );
-
-      await loadUsers();
-    } catch (err) {
-      setError(extractError(err));
     }
   };
 
+  // --------------------------------------------------
+  // Filter users
+  // --------------------------------------------------
+  const filteredUsers = users.filter((user) => {
+    const query = search.trim().toLowerCase();
+
+    if (!query) {
+      return true;
+    }
+
+    const roleName =
+      user.role?.name ||
+      "";
+
+    const roleCode =
+      user.role?.code ||
+      "";
+
+    return (
+      user.username
+        ?.toLowerCase()
+        .includes(query) ||
+      user.first_name
+        ?.toLowerCase()
+        .includes(query) ||
+      user.last_name
+        ?.toLowerCase()
+        .includes(query) ||
+      user.email
+        ?.toLowerCase()
+        .includes(query) ||
+      user.phone
+        ?.toLowerCase()
+        .includes(query) ||
+      user.job_title
+        ?.toLowerCase()
+        .includes(query) ||
+      roleName
+        .toLowerCase()
+        .includes(query) ||
+      roleCode
+        .toLowerCase()
+        .includes(query)
+    );
+  });
+
+  // --------------------------------------------------
+  // Get role name
+  // --------------------------------------------------
+  const getRoleName = (user) => {
+    if (user.role?.name) {
+      return user.role.name;
+    }
+
+    return "No Role";
+  };
+
+  // --------------------------------------------------
+  // Render
+  // --------------------------------------------------
   return (
-    <>
-      <PageHeader
-        title="Users & Roles"
-        subtitle="Manage system users and access roles."
-        action={
-          <button
-            type="button"
-            className="btn btn-success"
-            onClick={openCreateForm}
-          >
-            <i className="bi bi-person-plus me-2"></i>
-            Add User
-          </button>
-        }
-      />
+    <div className="container-fluid py-4">
 
-      {error && (
-        <div
-          className="alert alert-danger alert-dismissible fade show"
-          role="alert"
-        >
-          <i className="bi bi-exclamation-triangle me-2"></i>
-          {error}
+      {/* Page Header */}
+      <div className="d-flex justify-content-between align-items-center mb-4">
+        <div>
+          <h4 className="fw-bold mb-1">
+            Users
+          </h4>
 
-          <button
-            type="button"
-            className="btn-close"
-            onClick={() => setError("")}
-          ></button>
+          <p className="text-muted mb-0">
+            Manage KukuFarm system users and their roles.
+          </p>
         </div>
-      )}
 
+        <button
+          type="button"
+          className="btn btn-success"
+          onClick={openAddModal}
+        >
+          <i className="bi bi-person-plus me-2"></i>
+          Add User
+        </button>
+      </div>
+
+      {/* Success Alert */}
       {success && (
         <div
           className="alert alert-success alert-dismissible fade show"
@@ -443,303 +417,628 @@ export default function Users() {
         </div>
       )}
 
-      {/* Summary */}
-      <div className="row g-3 mb-4">
-        <div className="col-md-4">
-          <div className="card border-0 shadow-sm h-100">
-            <div className="card-body">
-              <div className="d-flex justify-content-between align-items-center">
-                <div>
-                  <small className="text-muted">
-                    Total Users
-                  </small>
+      {/* Error Alert */}
+      {error && !showModal && (
+        <div
+          className="alert alert-danger alert-dismissible fade show"
+          role="alert"
+        >
+          <i className="bi bi-exclamation-triangle me-2"></i>
+          {error}
 
-                  <h3 className="mb-0 mt-1">
-                    {totalUsers}
-                  </h3>
-                </div>
-
-                <div className="fs-2 text-primary">
-                  <i className="bi bi-people"></i>
-                </div>
-              </div>
-            </div>
-          </div>
+          <button
+            type="button"
+            className="btn-close"
+            onClick={() => setError("")}
+          ></button>
         </div>
+      )}
 
-        <div className="col-md-4">
-          <div className="card border-0 shadow-sm h-100">
-            <div className="card-body">
-              <div className="d-flex justify-content-between align-items-center">
-                <div>
-                  <small className="text-muted">
-                    Active Users
-                  </small>
+      {/* Search */}
+      <div className="card border-0 shadow-sm mb-4">
+        <div className="card-body">
+          <div className="row">
+            <div className="col-md-6">
+              <label
+                htmlFor="user-search"
+                className="form-label fw-semibold"
+              >
+                Search Users
+              </label>
 
-                  <h3 className="mb-0 mt-1 text-success">
-                    {activeUsers}
-                  </h3>
-                </div>
+              <div className="input-group">
+                <span className="input-group-text">
+                  <i className="bi bi-search"></i>
+                </span>
 
-                <div className="fs-2 text-success">
-                  <i className="bi bi-person-check"></i>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
+                <input
+                  id="user-search"
+                  type="text"
+                  className="form-control"
+                  placeholder="Search username, name, email, role..."
+                  value={search}
+                  onChange={(event) =>
+                    setSearch(event.target.value)
+                  }
+                />
 
-        <div className="col-md-4">
-          <div className="card border-0 shadow-sm h-100">
-            <div className="card-body">
-              <div className="d-flex justify-content-between align-items-center">
-                <div>
-                  <small className="text-muted">
-                    Inactive Users
-                  </small>
-
-                  <h3 className="mb-0 mt-1 text-danger">
-                    {inactiveUsers}
-                  </h3>
-                </div>
-
-                <div className="fs-2 text-danger">
-                  <i className="bi bi-person-x"></i>
-                </div>
+                {search && (
+                  <button
+                    type="button"
+                    className="btn btn-outline-secondary"
+                    onClick={() => setSearch("")}
+                  >
+                    <i className="bi bi-x-lg"></i>
+                  </button>
+                )}
               </div>
             </div>
           </div>
         </div>
       </div>
 
-      {/* User Form */}
-      {showForm && (
-        <div className="form-card mb-4">
-          <div className="d-flex justify-content-between align-items-center mb-3">
+      {/* Users Table */}
+      <div className="card border-0 shadow-sm">
+        <div className="card-header bg-white py-3">
+          <div className="d-flex justify-content-between align-items-center">
             <div>
-              <h5 className="mb-1">
-                {editingId
-                  ? "Edit User"
-                  : "Add New User"}
+              <h5 className="mb-0 fw-bold">
+                System Users
               </h5>
 
               <small className="text-muted">
-                {editingId
-                  ? "Update user account and access details."
-                  : "Create a new KukuFarm system user."}
+                {filteredUsers.length} user
+                {filteredUsers.length !== 1
+                  ? "s"
+                  : ""}
               </small>
             </div>
-
-            <button
-              type="button"
-              className="btn btn-light"
-              onClick={closeForm}
-              disabled={saving}
-            >
-              <i className="bi bi-x-lg"></i>
-            </button>
           </div>
+        </div>
 
-          <form onSubmit={saveUser}>
-            <div className="row g-3">
-              {/* Username */}
-              <div className="col-md-3">
-                <label className="form-label">
-                  Username <span className="text-danger">*</span>
-                </label>
-
-                <input
-                  type="text"
-                  name="username"
-                  className="form-control"
-                  value={form.username}
-                  onChange={handleChange}
-                  placeholder="e.g. kelvin"
-                  required
-                />
-
-                <small className="text-muted">
-                  Username can be changed when editing.
-                </small>
+        <div className="card-body p-0">
+          {loading ? (
+            <div className="text-center py-5">
+              <div
+                className="spinner-border text-success"
+                role="status"
+              >
+                <span className="visually-hidden">
+                  Loading...
+                </span>
               </div>
 
-              {/* First Name */}
-              <div className="col-md-3">
-                <label className="form-label">
-                  First Name
-                </label>
+              <p className="text-muted mt-3 mb-0">
+                Loading users...
+              </p>
+            </div>
+          ) : filteredUsers.length === 0 ? (
+            <div className="text-center py-5">
+              <i className="bi bi-people fs-1 text-muted"></i>
 
-                <input
-                  type="text"
-                  name="first_name"
-                  className="form-control"
-                  value={form.first_name}
-                  onChange={handleChange}
-                  placeholder="First name"
-                />
-              </div>
+              <h6 className="mt-3">
+                No users found
+              </h6>
 
-              {/* Last Name */}
-              <div className="col-md-3">
-                <label className="form-label">
-                  Last Name
-                </label>
+              <p className="text-muted mb-3">
+                {search
+                  ? "No users match your search."
+                  : "There are no users available."}
+              </p>
 
-                <input
-                  type="text"
-                  name="last_name"
-                  className="form-control"
-                  value={form.last_name}
-                  onChange={handleChange}
-                  placeholder="Last name"
-                />
-              </div>
-
-              {/* Email */}
-              <div className="col-md-3">
-                <label className="form-label">
-                  Email <span className="text-danger">*</span>
-                </label>
-
-                <input
-                  type="email"
-                  name="email"
-                  className="form-control"
-                  value={form.email}
-                  onChange={handleChange}
-                  placeholder="user@example.com"
-                  required
-                />
-              </div>
-
-              {/* Phone */}
-              <div className="col-md-3">
-                <label className="form-label">
-                  Phone
-                </label>
-
-                <input
-                  type="text"
-                  name="phone"
-                  className="form-control"
-                  value={form.phone}
-                  onChange={handleChange}
-                  placeholder="+255..."
-                />
-              </div>
-
-              {/* Job Title */}
-              <div className="col-md-3">
-                <label className="form-label">
-                  Job Title
-                </label>
-
-                <input
-                  type="text"
-                  name="job_title"
-                  className="form-control"
-                  value={form.job_title}
-                  onChange={handleChange}
-                  placeholder="e.g. Farm Manager"
-                />
-              </div>
-
-              {/* Role */}
-              <div className="col-md-3">
-                <label className="form-label">
-                  Role <span className="text-danger">*</span>
-                </label>
-
-                <select
-                  name="role"
-                  className="form-select"
-                  value={form.role}
-                  onChange={handleChange}
-                  required
+              {!search && (
+                <button
+                  type="button"
+                  className="btn btn-success"
+                  onClick={openAddModal}
                 >
-                  <option value="">
-                    Select Role
-                  </option>
+                  <i className="bi bi-person-plus me-2"></i>
+                  Add User
+                </button>
+              )}
+            </div>
+          ) : (
+            <div className="table-responsive">
+              <table className="table table-hover align-middle mb-0">
+                <thead className="table-light">
+                  <tr>
+                    <th className="px-3">
+                      #
+                    </th>
 
-                  {roles.map((role) => (
-                    <option
-                      key={role.value}
-                      value={role.value}
-                    >
-                      {role.label}
-                    </option>
-                  ))}
-                </select>
-              </div>
+                    <th>
+                      User
+                    </th>
 
-              {/* Password */}
-              <div className="col-md-3">
-                <label className="form-label">
-                  Password{" "}
-                  {!editingId && (
-                    <span className="text-danger">
-                      *
-                    </span>
+                    <th>
+                      Email
+                    </th>
+
+                    <th>
+                      Phone
+                    </th>
+
+                    <th>
+                      Job Title
+                    </th>
+
+                    <th>
+                      Role
+                    </th>
+
+                    <th>
+                      Status
+                    </th>
+
+                    <th className="text-end px-3">
+                      Actions
+                    </th>
+                  </tr>
+                </thead>
+
+                <tbody>
+                  {filteredUsers.map(
+                    (user, index) => {
+                      const isActive =
+                        user.active ??
+                        user.is_active ??
+                        false;
+
+                      return (
+                        <tr key={user.id}>
+                          <td className="px-3">
+                            {index + 1}
+                          </td>
+
+                          <td>
+                            <div className="d-flex align-items-center">
+                              <div
+                                className="bg-success bg-opacity-10 text-success rounded-circle d-flex align-items-center justify-content-center me-2"
+                                style={{
+                                  width: "40px",
+                                  height: "40px",
+                                }}
+                              >
+                                <i className="bi bi-person"></i>
+                              </div>
+
+                              <div>
+                                <div className="fw-semibold">
+                                  {user.username}
+                                </div>
+
+                                <small className="text-muted">
+                                  {user.first_name ||
+                                  user.last_name
+                                    ? `${user.first_name || ""} ${
+                                        user.last_name || ""
+                                      }`.trim()
+                                    : "No name"}
+                                </small>
+                              </div>
+                            </div>
+                          </td>
+
+                          <td>
+                            {user.email || (
+                              <span className="text-muted">
+                                —
+                              </span>
+                            )}
+                          </td>
+
+                          <td>
+                            {user.phone || (
+                              <span className="text-muted">
+                                —
+                              </span>
+                            )}
+                          </td>
+
+                          <td>
+                            {user.job_title || (
+                              <span className="text-muted">
+                                —
+                              </span>
+                            )}
+                          </td>
+
+                          <td>
+                            {user.role ? (
+                              <span className="badge bg-primary-subtle text-primary">
+                                {getRoleName(user)}
+                              </span>
+                            ) : (
+                              <span className="badge bg-secondary-subtle text-secondary">
+                                No Role
+                              </span>
+                            )}
+                          </td>
+
+                          <td>
+                            {isActive ? (
+                              <span className="badge bg-success">
+                                Active
+                              </span>
+                            ) : (
+                              <span className="badge bg-secondary">
+                                Inactive
+                              </span>
+                            )}
+                          </td>
+
+                          <td className="text-end px-3">
+                            <div className="btn-group">
+                              <button
+                                type="button"
+                                className="btn btn-sm btn-outline-primary"
+                                title="Edit User"
+                                onClick={() =>
+                                  openEditModal(user)
+                                }
+                              >
+                                <i className="bi bi-pencil"></i>
+                              </button>
+
+                              <button
+                                type="button"
+                                className="btn btn-sm btn-outline-danger"
+                                title="Delete User"
+                                onClick={() =>
+                                  deleteUser(user)
+                                }
+                              >
+                                <i className="bi bi-trash"></i>
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    }
                   )}
-                </label>
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      </div>
 
-                <input
-                  type="password"
-                  name="password"
-                  className="form-control"
-                  value={form.password}
-                  onChange={handleChange}
-                  placeholder={
-                    editingId
-                      ? "Leave blank to keep current"
-                      : "Minimum 8 characters"
-                  }
-                  minLength={8}
-                  required={!editingId}
-                />
+      {/* ==================================================
+          BOOTSTRAP USER MODAL
+          ================================================== */}
 
-                {editingId && (
-                  <small className="text-muted">
-                    Leave blank to keep the current password.
-                  </small>
-                )}
-              </div>
+      {showModal && (
+        <>
+          <div
+            className="modal fade show d-block"
+            tabIndex="-1"
+            role="dialog"
+            aria-modal="true"
+          >
+            <div className="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
+              <div className="modal-content">
 
-              {/* Active */}
-              <div className="col-md-3">
-                <label className="form-label d-block">
-                  Account Status
-                </label>
+                {/* Modal Header */}
+                <div className="modal-header">
+                  <div>
+                    <h5 className="modal-title fw-bold mb-1">
+                      {editingUser
+                        ? "Edit User"
+                        : "Add New User"}
+                    </h5>
 
-                <div className="form-check form-switch mt-2">
-                  <input
-                    className="form-check-input"
-                    type="checkbox"
-                    role="switch"
-                    id="user-active"
-                    name="active"
-                    checked={form.active}
-                    onChange={handleChange}
-                  />
+                    <small className="text-muted">
+                      {editingUser
+                        ? "Update user account information and role."
+                        : "Create a new KukuFarm system user."}
+                    </small>
+                  </div>
 
-                  <label
-                    className="form-check-label"
-                    htmlFor="user-active"
-                  >
-                    {form.active
-                      ? "Active"
-                      : "Inactive"}
-                  </label>
+                  <button
+                    type="button"
+                    className="btn-close"
+                    aria-label="Close"
+                    onClick={closeModal}
+                    disabled={saving}
+                  ></button>
                 </div>
-              </div>
 
-              {/* Buttons */}
-              <div className="col-12">
-                <hr />
+                {/* Modal Body */}
+                <div className="modal-body">
 
-                <div className="d-flex gap-2">
+                  {/* Modal Error */}
+                  {error && (
+                    <div
+                      className="alert alert-danger"
+                      role="alert"
+                    >
+                      <i className="bi bi-exclamation-triangle me-2"></i>
+                      {error}
+                    </div>
+                  )}
+
+                  <form
+                    id="user-form"
+                    onSubmit={saveUser}
+                  >
+
+                    <div className="row g-3">
+
+                      {/* Username */}
+                      <div className="col-md-6">
+                        <label
+                          htmlFor="user-username"
+                          className="form-label fw-semibold"
+                        >
+                          Username
+                          <span className="text-danger">
+                            {" "}*
+                          </span>
+                        </label>
+
+                        <div className="input-group">
+                          <span className="input-group-text">
+                            <i className="bi bi-person"></i>
+                          </span>
+
+                          <input
+                            id="user-username"
+                            type="text"
+                            name="username"
+                            className="form-control"
+                            value={form.username}
+                            onChange={handleChange}
+                            placeholder="Enter username"
+                            required
+                          />
+                        </div>
+                      </div>
+
+                      {/* Email */}
+                      <div className="col-md-6">
+                        <label
+                          htmlFor="user-email"
+                          className="form-label fw-semibold"
+                        >
+                          Email
+                        </label>
+
+                        <div className="input-group">
+                          <span className="input-group-text">
+                            <i className="bi bi-envelope"></i>
+                          </span>
+
+                          <input
+                            id="user-email"
+                            type="email"
+                            name="email"
+                            className="form-control"
+                            value={form.email}
+                            onChange={handleChange}
+                            placeholder="Enter email address"
+                          />
+                        </div>
+                      </div>
+
+                      {/* First Name */}
+                      <div className="col-md-6">
+                        <label
+                          htmlFor="user-first-name"
+                          className="form-label fw-semibold"
+                        >
+                          First Name
+                        </label>
+
+                        <input
+                          id="user-first-name"
+                          type="text"
+                          name="first_name"
+                          className="form-control"
+                          value={form.first_name}
+                          onChange={handleChange}
+                          placeholder="Enter first name"
+                        />
+                      </div>
+
+                      {/* Last Name */}
+                      <div className="col-md-6">
+                        <label
+                          htmlFor="user-last-name"
+                          className="form-label fw-semibold"
+                        >
+                          Last Name
+                        </label>
+
+                        <input
+                          id="user-last-name"
+                          type="text"
+                          name="last_name"
+                          className="form-control"
+                          value={form.last_name}
+                          onChange={handleChange}
+                          placeholder="Enter last name"
+                        />
+                      </div>
+
+                      {/* Phone */}
+                      <div className="col-md-6">
+                        <label
+                          htmlFor="user-phone"
+                          className="form-label fw-semibold"
+                        >
+                          Phone
+                        </label>
+
+                        <div className="input-group">
+                          <span className="input-group-text">
+                            <i className="bi bi-telephone"></i>
+                          </span>
+
+                          <input
+                            id="user-phone"
+                            type="text"
+                            name="phone"
+                            className="form-control"
+                            value={form.phone}
+                            onChange={handleChange}
+                            placeholder="+255..."
+                          />
+                        </div>
+                      </div>
+
+                      {/* Job Title */}
+                      <div className="col-md-6">
+                        <label
+                          htmlFor="user-job-title"
+                          className="form-label fw-semibold"
+                        >
+                          Job Title
+                        </label>
+
+                        <input
+                          id="user-job-title"
+                          type="text"
+                          name="job_title"
+                          className="form-control"
+                          value={form.job_title}
+                          onChange={handleChange}
+                          placeholder="e.g. Farm Manager"
+                        />
+                      </div>
+
+                      {/* Role */}
+                      <div className="col-md-6">
+                        <label
+                          htmlFor="user-role"
+                          className="form-label fw-semibold"
+                        >
+                          Role
+                          <span className="text-danger">
+                            {" "}*
+                          </span>
+                        </label>
+
+                        <select
+                          id="user-role"
+                          name="role_id"
+                          className="form-select"
+                          value={form.role_id}
+                          onChange={handleChange}
+                          required
+                        >
+                          <option value="">
+                            -- Select Role --
+                          </option>
+
+                          {roles.map((role) => (
+                            <option
+                              key={role.id}
+                              value={role.id}
+                            >
+                              {role.name}
+                            </option>
+                          ))}
+                        </select>
+
+                        <div className="form-text">
+                          Select the system role assigned to this user.
+                        </div>
+                      </div>
+
+                      {/* Password */}
+                      <div className="col-md-6">
+                        <label
+                          htmlFor="user-password"
+                          className="form-label fw-semibold"
+                        >
+                          Password
+                          {!editingUser && (
+                            <span className="text-danger">
+                              {" "}*
+                            </span>
+                          )}
+                        </label>
+
+                        <div className="input-group">
+                          <span className="input-group-text">
+                            <i className="bi bi-lock"></i>
+                          </span>
+
+                          <input
+                            id="user-password"
+                            type="password"
+                            name="password"
+                            className="form-control"
+                            value={form.password}
+                            onChange={handleChange}
+                            placeholder={
+                              editingUser
+                                ? "Leave blank to keep current password"
+                                : "Enter password"
+                            }
+                            required={!editingUser}
+                          />
+                        </div>
+
+                        {editingUser && (
+                          <div className="form-text">
+                            Leave blank if you do not want to change the password.
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Account Status */}
+                      <div className="col-12">
+                        <div className="card bg-light border-0">
+                          <div className="card-body">
+
+                            <div className="form-check form-switch">
+                              <input
+                                id="user-active"
+                                type="checkbox"
+                                name="active"
+                                className="form-check-input"
+                                role="switch"
+                                checked={form.active}
+                                onChange={handleChange}
+                              />
+
+                              <label
+                                htmlFor="user-active"
+                                className="form-check-label fw-semibold"
+                              >
+                                Active Account
+                              </label>
+                            </div>
+
+                            <small className="text-muted">
+                              Inactive users will not be able to use the system.
+                            </small>
+
+                          </div>
+                        </div>
+                      </div>
+
+                    </div>
+                  </form>
+                </div>
+
+                {/* Modal Footer */}
+                <div className="modal-footer">
+
+                  <button
+                    type="button"
+                    className="btn btn-secondary"
+                    onClick={closeModal}
+                    disabled={saving}
+                  >
+                    <i className="bi bi-x-lg me-2"></i>
+                    Cancel
+                  </button>
+
                   <button
                     type="submit"
+                    form="user-form"
                     className="btn btn-success"
                     disabled={saving}
                   >
@@ -749,274 +1048,36 @@ export default function Users() {
                           className="spinner-border spinner-border-sm me-2"
                           role="status"
                         ></span>
+
                         Saving...
                       </>
                     ) : (
                       <>
                         <i className="bi bi-check-lg me-2"></i>
-                        {editingId
+
+                        {editingUser
                           ? "Update User"
                           : "Save User"}
                       </>
                     )}
                   </button>
 
-                  <button
-                    type="button"
-                    className="btn btn-light"
-                    onClick={closeForm}
-                    disabled={saving}
-                  >
-                    Cancel
-                  </button>
                 </div>
+
               </div>
-            </div>
-          </form>
-        </div>
-      )}
-
-      {/* Users Table */}
-      <div className="table-card">
-        <div className="p-3 border-bottom">
-          <div className="row g-2 align-items-center">
-            <div className="col-md-6">
-              <div className="input-group">
-                <span className="input-group-text bg-white">
-                  <i className="bi bi-search"></i>
-                </span>
-
-                <input
-                  type="text"
-                  className="form-control"
-                  placeholder="Search username, name, email, role..."
-                  value={search}
-                  onChange={(e) =>
-                    setSearch(e.target.value)
-                  }
-                />
-              </div>
-            </div>
-
-            <div className="col-md-6 text-md-end">
-              <span className="text-muted">
-                Showing {filteredUsers.length} of{" "}
-                {totalUsers} users
-              </span>
             </div>
           </div>
-        </div>
 
-        <div className="table-responsive">
-          <table className="table align-middle mb-0">
-            <thead>
-              <tr>
-                <th>User</th>
-                <th>Username</th>
-                <th>Email</th>
-                <th>Role</th>
-                <th>Phone</th>
-                <th>Status</th>
-                <th>Joined</th>
-                <th className="text-end">
-                  Action
-                </th>
-              </tr>
-            </thead>
+          {/* Modal Backdrop */}
+          <div
+            className="modal-backdrop fade show"
+            onClick={closeModal}
+          ></div>
+        </>
+      )}
 
-            <tbody>
-              {loading ? (
-                <tr>
-                  <td
-                    colSpan="8"
-                    className="text-center py-5"
-                  >
-                    <div
-                      className="spinner-border text-success"
-                      role="status"
-                    ></div>
-
-                    <div className="mt-2 text-muted">
-                      Loading users...
-                    </div>
-                  </td>
-                </tr>
-              ) : filteredUsers.length === 0 ? (
-                <tr>
-                  <td
-                    colSpan="8"
-                    className="text-center py-5"
-                  >
-                    <i className="bi bi-people fs-1 text-muted"></i>
-
-                    <div className="mt-2">
-                      <strong>
-                        No users found
-                      </strong>
-                    </div>
-
-                    <small className="text-muted">
-                      {search
-                        ? "Try a different search."
-                        : "No system users have been created yet."}
-                    </small>
-                  </td>
-                </tr>
-              ) : (
-                filteredUsers.map((user) => {
-                  const active = isUserActive(user);
-
-                  return (
-                    <tr key={user.id}>
-                      {/* User */}
-                      <td>
-                        <div className="d-flex align-items-center">
-                          <div
-                            className="avatar me-2 d-flex align-items-center justify-content-center rounded-circle"
-                            style={{
-                              width: "40px",
-                              height: "40px",
-                              minWidth: "40px",
-                            }}
-                          >
-                            <strong>
-                              {getInitial(user)}
-                            </strong>
-                          </div>
-
-                          <div>
-                            <strong>
-                              {getUserName(user)}
-                            </strong>
-
-                            {user?.profile?.job_title && (
-                              <div>
-                                <small className="text-muted">
-                                  {
-                                    user.profile
-                                      .job_title
-                                  }
-                                </small>
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                      </td>
-
-                      {/* Username */}
-                      <td>
-                        <code>
-                          {user.username}
-                        </code>
-                      </td>
-
-                      {/* Email */}
-                      <td>
-                        {user.email || "-"}
-                      </td>
-
-                      {/* Role */}
-                      <td>
-                        <span className="role-badge">
-                          {getRoleLabel(
-                            user,
-                            roles
-                          )}
-                        </span>
-                      </td>
-
-                      {/* Phone */}
-                      <td>
-                        {user?.profile?.phone ||
-                          user?.phone ||
-                          "-"}
-                      </td>
-
-                      {/* Status */}
-                      <td>
-                        <span
-                          className={`status ${
-                            active
-                              ? "active"
-                              : "inactive"
-                          }`}
-                        >
-                          {active
-                            ? "Active"
-                            : "Inactive"}
-                        </span>
-                      </td>
-
-                      {/* Joined */}
-                      <td>
-                        <small>
-                          {formatDate(
-                            user.date_joined
-                          )}
-                        </small>
-                      </td>
-
-                      {/* Actions */}
-                      <td className="text-end">
-                        <div className="btn-group">
-                          <button
-                            type="button"
-                            className="btn btn-sm btn-light"
-                            title="Edit User"
-                            onClick={() =>
-                              openEditForm(user)
-                            }
-                          >
-                            <i className="bi bi-pencil"></i>
-                          </button>
-
-                          <button
-                            type="button"
-                            className={`btn btn-sm ${
-                              active
-                                ? "btn-light"
-                                : "btn-outline-success"
-                            }`}
-                            title={
-                              active
-                                ? "Deactivate User"
-                                : "Activate User"
-                            }
-                            onClick={() =>
-                              toggleUserStatus(
-                                user
-                              )
-                            }
-                          >
-                            <i
-                              className={`bi ${
-                                active
-                                  ? "bi-person-x"
-                                  : "bi-person-check"
-                              }`}
-                            ></i>
-                          </button>
-
-                          <button
-                            type="button"
-                            className="btn btn-sm btn-light text-danger"
-                            title="Delete User"
-                            onClick={() =>
-                              deleteUser(user)
-                            }
-                          >
-                            <i className="bi bi-trash"></i>
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })
-              )}
-            </tbody>
-          </table>
-        </div>
-      </div>
-    </>
+    </div>
   );
 }
+
+export default Users;

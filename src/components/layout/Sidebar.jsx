@@ -92,6 +92,11 @@ const groups = [
         label: "Users & Roles",
       },
       {
+        to: "/roles",
+        icon: "bi-shield-check",
+        label: "Roles & Permissions",
+      },
+      {
         to: "/settings",
         icon: "bi-gear-fill",
         label: "Settings",
@@ -206,3 +211,4 @@ export default function Sidebar({ mobileOpen, onClose }) {
     </>
   );
 }
+

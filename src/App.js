@@ -17,6 +17,7 @@ import Suppliers from './pages/Suppliers';
 import Reports from './pages/Reports';
 import Users from './pages/Users';
 import Settings from './pages/Settings';
+import Roles from "./pages/Roles";
 
 function ProtectedRoute({ children }) {
   const { user } = useAuth();
@@ -43,6 +44,7 @@ function AppRoutes() {
         <Route path="reports" element={<Reports />} />
         <Route path="users" element={<Users />} />
         <Route path="settings" element={<Settings />} />
+        <Route path="/roles" element={<Roles />} />
       </Route>
       <Route path="*" element={<Navigate to={user ? "/" : "/login"} replace />} />
     </Routes>

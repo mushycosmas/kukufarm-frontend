@@ -4,47 +4,131 @@ import { useAuth } from "../../context/AuthContext";
 export default function Topbar({ onMenu }) {
   const { user, logout } = useAuth();
 
+  // --------------------------------------------------
+  // Get user full name
+  // --------------------------------------------------
   const getUserName = () => {
-    if (!user) return "Kelvin";
+    if (!user) {
+      return "Kelvin";
+    }
 
-    const fullName = [user.first_name, user.last_name]
+    const fullName = [
+      user.first_name,
+      user.last_name,
+    ]
       .filter(Boolean)
       .join(" ")
       .trim();
 
-    return fullName || user.name || user.username;
+    return (
+      fullName ||
+      user.name ||
+      user.username ||
+      "User"
+    );
   };
 
+  // --------------------------------------------------
+  // Get user role
+  // --------------------------------------------------
   const getUserRole = () => {
-    if (!user) return "";
-
-    if (typeof user.role === "string") {
-      return user.role
-        .replace(/_/g, " ")
-        .replace(/\b\w/g, (char) => char.toUpperCase());
+    if (!user) {
+      return "";
     }
 
-    return user.profile?.role
-      ?.replace(/_/g, " ")
-      ?.replace(/\b\w/g, (char) => char.toUpperCase()) || "";
+    /*
+     * New backend response:
+     *
+     * role: {
+     *   id: 1,
+     *   name: "Administrator",
+     *   code: "admin"
+     * }
+     */
+
+    if (
+      user.role &&
+      typeof user.role === "object"
+    ) {
+      return (
+        user.role.name ||
+        user.role.code ||
+        ""
+      );
+    }
+
+    // Fallback if role is still a string
+    if (
+      typeof user.role === "string"
+    ) {
+      return user.role
+        .replace(/_/g, " ")
+        .replace(/\b\w/g, (char) =>
+          char.toUpperCase()
+        );
+    }
+
+    // Fallback for older profile structure
+    if (
+      user.profile?.role &&
+      typeof user.profile.role === "object"
+    ) {
+      return (
+        user.profile.role.name ||
+        user.profile.role.code ||
+        ""
+      );
+    }
+
+    if (
+      typeof user.profile?.role === "string"
+    ) {
+      return user.profile.role
+        .replace(/_/g, " ")
+        .replace(/\b\w/g, (char) =>
+          char.toUpperCase()
+        );
+    }
+
+    // Final fallback using role_id
+    if (user.role_id) {
+      return `Role #${user.role_id}`;
+    }
+
+    return "";
   };
 
+  // --------------------------------------------------
+  // Get avatar initial
+  // --------------------------------------------------
   const getInitial = () => {
     const name = getUserName();
-    return name.charAt(0).toUpperCase();
+
+    return name
+      ? name.charAt(0).toUpperCase()
+      : "U";
   };
 
+  // --------------------------------------------------
+  // Logout
+  // --------------------------------------------------
   const handleLogout = async () => {
     try {
       await logout();
     } catch (error) {
-      console.error("Logout failed:", error);
+      console.error(
+        "Logout failed:",
+        error
+      );
     }
   };
 
   return (
     <header className="topbar">
-      {/* Mobile Menu */}
+
+      {/* --------------------------------------------
+          Mobile Menu
+          -------------------------------------------- */}
       <button
         type="button"
         className="mobile-menu btn btn-light"
@@ -54,7 +138,9 @@ export default function Topbar({ onMenu }) {
         <i className="bi bi-list"></i>
       </button>
 
-      {/* Search */}
+      {/* --------------------------------------------
+          Search
+          -------------------------------------------- */}
       <div className="topbar-search">
         <i className="bi bi-search"></i>
 
@@ -65,8 +151,11 @@ export default function Topbar({ onMenu }) {
         />
       </div>
 
-      {/* Actions */}
+      {/* --------------------------------------------
+          Actions
+          -------------------------------------------- */}
       <div className="topbar-actions">
+
         {/* Notifications */}
         <button
           type="button"
@@ -75,18 +164,34 @@ export default function Topbar({ onMenu }) {
           aria-label="Notifications"
         >
           <i className="bi bi-bell"></i>
+
           <span className="notification-dot"></span>
         </button>
 
-        {/* User */}
+        {/* ----------------------------------------
+            User
+            ---------------------------------------- */}
         <div className="user-menu">
-          <div className="avatar" title={getUserName()}>
+
+          {/* Avatar */}
+          <div
+            className="avatar"
+            title={getUserName()}
+          >
             {getInitial()}
           </div>
 
+          {/* User information */}
           <div className="user-info">
-            <strong>{getUserName()}</strong>
-            <small>{getUserRole()}</small>
+
+            <strong>
+              {getUserName()}
+            </strong>
+
+            <small>
+              {getUserRole()}
+            </small>
+
           </div>
 
           {/* Logout */}
@@ -99,6 +204,7 @@ export default function Topbar({ onMenu }) {
           >
             <i className="bi bi-box-arrow-right"></i>
           </button>
+
         </div>
       </div>
     </header>
