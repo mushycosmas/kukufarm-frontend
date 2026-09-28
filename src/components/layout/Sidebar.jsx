@@ -29,6 +29,11 @@ const groups = [
         label: "Egg Production",
       },
       {
+        to: "/egg-inventory",
+        icon: "bi-box-seam-fill",
+        label: "Egg Inventory",
+      },
+      {
         to: "/feed",
         icon: "bi-basket2-fill",
         label: "Feed Management",
@@ -47,7 +52,7 @@ const groups = [
   },
 
   {
-    title: "BUSINESS",
+    title: "SALES & BUSINESS",
     items: [
       {
         to: "/sales",
@@ -88,8 +93,8 @@ const groups = [
     items: [
       {
         to: "/users",
-        icon: "bi-person-gear",
-        label: "Users & Roles",
+        icon: "bi-people",
+        label: "Users",
       },
       {
         to: "/roles",
@@ -160,7 +165,7 @@ export default function Sidebar({ mobileOpen, onClose }) {
             <i className="bi bi-egg-fried"></i>
           </div>
 
-          <div>
+          <div className="brand-text">
             <strong>KukuFarm</strong>
             <small>Farm Management</small>
           </div>
@@ -168,7 +173,9 @@ export default function Sidebar({ mobileOpen, onClose }) {
 
         {/* Current Farm */}
         <div className="farm-badge">
-          <i className="bi bi-house-heart-fill"></i>
+          <div className="farm-badge-icon">
+            <i className="bi bi-house-heart-fill"></i>
+          </div>
 
           <div className="farm-badge-content">
             <span>Current Farm</span>
@@ -181,29 +188,34 @@ export default function Sidebar({ mobileOpen, onClose }) {
             </strong>
           </div>
 
-          <i className="bi bi-chevron-down ms-auto"></i>
+          <i className="bi bi-chevron-down farm-chevron"></i>
         </div>
 
         {/* Navigation */}
-        <nav>
+        <nav className="sidebar-navigation">
           {groups.map((group) => (
             <div className="nav-group" key={group.title}>
               <div className="nav-title">{group.title}</div>
 
-              {group.items.map((item) => (
-                <NavLink
-                  key={item.to}
-                  to={item.to}
-                  end={item.to === "/"}
-                  onClick={onClose}
-                  className={({ isActive }) =>
-                    `nav-item ${isActive ? "active" : ""}`
-                  }
-                >
-                  <i className={`bi ${item.icon}`}></i>
-                  <span>{item.label}</span>
-                </NavLink>
-              ))}
+              <div className="nav-items">
+                {group.items.map((item) => (
+                  <NavLink
+                    key={item.to}
+                    to={item.to}
+                    end={item.to === "/"}
+                    onClick={onClose}
+                    className={({ isActive }) =>
+                      `nav-item ${isActive ? "active" : ""}`
+                    }
+                  >
+                    <span className="nav-icon">
+                      <i className={`bi ${item.icon}`}></i>
+                    </span>
+
+                    <span className="nav-label">{item.label}</span>
+                  </NavLink>
+                ))}
+              </div>
             </div>
           ))}
         </nav>

@@ -6,6 +6,57 @@ import StatCard from "../components/dashboard/StatCard";
 import ConfirmModal from "../components/common/ConfirmModal";
 import api from "../services/api";
 
+const EGGS_PER_TRAY = 30;
+
+/* =========================================================
+   HELPERS
+========================================================= */
+
+const getToday = () => {
+  return new Date().toISOString().split("T")[0];
+};
+
+const toNumber = (value) => {
+  const number = Number(value);
+  return Number.isFinite(number) ? number : 0;
+};
+
+const formatNumber = (value) => {
+  return toNumber(value).toLocaleString("en-TZ");
+};
+
+const formatTrays = (value) => {
+  const number = toNumber(value);
+
+  return number.toLocaleString("en-TZ", {
+    minimumFractionDigits: number % 1 !== 0 ? 1 : 0,
+    maximumFractionDigits: 2,
+  });
+};
+
+/* =========================================================
+   EMPTY FORM
+========================================================= */
+
+const createEmptyForm = (flocks = []) => ({
+  date: getToday(),
+  flock: flocks.length > 0 ? flocks[0].id : "",
+
+  // Production
+  full_trays: "",
+  loose_eggs: "",
+
+  // Damaged / rejected
+  broken_eggs: "",
+  rejected_eggs: "",
+
+  notes: "",
+});
+
+/* =========================================================
+   COMPONENT
+========================================================= */
+
 export default function EggProduction() {
   const [data, setData] = useState([]);
   const [flocks, setFlocks] = useState([]);
@@ -21,19 +72,11 @@ export default function EggProduction() {
   const [editingId, setEditingId] = useState(null);
   const [deleteId, setDeleteId] = useState(null);
 
-  const [form, setForm] = useState({
-    date: new Date().toISOString().split("T")[0],
-    flock: "",
-    eggs_collected: "",
-    broken_eggs: "",
-    rejected_eggs: "",
-    trays: "",
-    notes: "",
-  });
+  const [form, setForm] = useState(createEmptyForm());
 
-  // =========================================================
-  // LOAD DATA
-  // =========================================================
+  /* =======================================================
+     LOAD DATA
+  ======================================================= */
 
   useEffect(() => {
     loadData();
@@ -44,25 +87,25 @@ export default function EggProduction() {
     setError("");
 
     try {
-      const [productionResponse, flockResponse] =
-        await Promise.all([
-          api.get("/production/"),
-          api.get("/flocks/"),
-        ]);
+      const [
+        productionResponse,
+        flockResponse,
+      ] = await Promise.all([
+        api.get("/production/"),
+        api.get("/flocks/"),
+      ]);
 
       const productionData =
-        productionResponse.data?.results
-          ? productionResponse.data.results
-          : Array.isArray(productionResponse.data)
-            ? productionResponse.data
-            : [];
+        productionResponse.data?.results ??
+        (Array.isArray(productionResponse.data)
+          ? productionResponse.data
+          : []);
 
       const flockData =
-        flockResponse.data?.results
-          ? flockResponse.data.results
-          : Array.isArray(flockResponse.data)
-            ? flockResponse.data
-            : [];
+        flockResponse.data?.results ??
+        (Array.isArray(flockResponse.data)
+          ? flockResponse.data
+          : []);
 
       setData(productionData);
       setFlocks(flockData);
@@ -70,11 +113,21 @@ export default function EggProduction() {
       if (flockData.length > 0) {
         setForm((current) => ({
           ...current,
-          flock: current.flock || flockData[0].id,
+          flock:
+            current.flock ||
+            flockData[0].id,
         }));
       }
     } catch (err) {
-      console.error(err);
+      console.error(
+        "Failed to load egg production:",
+        err
+      );
+
+      console.error(
+        "Backend response:",
+        err.response?.data
+      );
 
       setError(
         err.response?.data?.detail ||
@@ -85,12 +138,15 @@ export default function EggProduction() {
     }
   };
 
-  // =========================================================
-  // FORM
-  // =========================================================
+  /* =======================================================
+     FORM CHANGE
+  ======================================================= */
 
   const handleChange = (e) => {
-    const { name, value } = e.target;
+    const {
+      name,
+      value,
+    } = e.target;
 
     setForm((current) => ({
       ...current,
@@ -100,86 +156,207 @@ export default function EggProduction() {
     setFormError("");
   };
 
-  // =========================================================
-  // CREATE
-  // =========================================================
+  /* =======================================================
+     FORM CALCULATIONS
+  ======================================================= */
+
+  const formCalculations = useMemo(() => {
+    const fullTrays = toNumber(
+      form.full_trays
+    );
+
+    const looseEggs = toNumber(
+      form.loose_eggs
+    );
+
+    const brokenEggs = toNumber(
+      form.broken_eggs
+    );
+
+    const rejectedEggs = toNumber(
+      form.rejected_eggs
+    );
+
+    const eggsCollected =
+      fullTrays * EGGS_PER_TRAY +
+      looseEggs;
+
+    const equivalentTrays =
+      eggsCollected / EGGS_PER_TRAY;
+
+    const totalPhysicallyCollected =
+      eggsCollected +
+      brokenEggs +
+      rejectedEggs;
+
+    const productionRate =
+      totalPhysicallyCollected > 0
+        ? (
+            (eggsCollected /
+              totalPhysicallyCollected) *
+            100
+          ).toFixed(1)
+        : "0.0";
+
+    return {
+      fullTrays,
+      looseEggs,
+      brokenEggs,
+      rejectedEggs,
+      eggsCollected,
+      equivalentTrays,
+      totalPhysicallyCollected,
+      productionRate,
+    };
+  }, [
+    form.full_trays,
+    form.loose_eggs,
+    form.broken_eggs,
+    form.rejected_eggs,
+  ]);
+
+  /* =======================================================
+     CREATE
+  ======================================================= */
 
   const openCreateModal = () => {
     setEditingId(null);
     setFormError("");
 
-    setForm({
-      date: new Date().toISOString().split("T")[0],
-      flock: flocks.length > 0 ? flocks[0].id : "",
-      eggs_collected: "",
-      broken_eggs: "",
-      rejected_eggs: "",
-      trays: "",
-      notes: "",
-    });
+    setForm(
+      createEmptyForm(flocks)
+    );
 
     setShow(true);
   };
 
-  // =========================================================
-  // EDIT
-  // =========================================================
+  /* =======================================================
+     EDIT
+  ======================================================= */
 
   const openEditModal = (record) => {
     setEditingId(record.id);
     setFormError("");
 
+    const eggsCollected = toNumber(
+      record.eggs_collected
+    );
+
+    const fullTrays = Math.floor(
+      eggsCollected / EGGS_PER_TRAY
+    );
+
+    const looseEggs =
+      eggsCollected % EGGS_PER_TRAY;
+
     setForm({
       date: record.date || "",
-      flock: record.flock || "",
-      eggs_collected: record.eggs_collected ?? "",
-      broken_eggs: record.broken_eggs ?? "",
-      rejected_eggs: record.rejected_eggs ?? "",
-      trays: record.trays ?? "",
-      notes: record.notes || "",
+
+      flock:
+        record.flock ||
+        "",
+
+      full_trays:
+        fullTrays > 0
+          ? String(fullTrays)
+          : "",
+
+      loose_eggs:
+        looseEggs > 0
+          ? String(looseEggs)
+          : "",
+
+      broken_eggs:
+        record.broken_eggs ?? "",
+
+      rejected_eggs:
+        record.rejected_eggs ?? "",
+
+      notes:
+        record.notes || "",
     });
 
     setShow(true);
   };
 
-  // =========================================================
-  // SAVE / UPDATE
-  // =========================================================
+  /* =======================================================
+     VALIDATION
+  ======================================================= */
 
-  const save = async () => {
-    setFormError("");
-
+  const validateForm = () => {
     if (!form.date) {
-      setFormError("Please select the date.");
-      return;
+      setFormError(
+        "Please select the production date."
+      );
+
+      return false;
     }
 
     if (!form.flock) {
-      setFormError("Please select a flock.");
-      return;
+      setFormError(
+        "Please select a flock."
+      );
+
+      return false;
+    }
+
+    const fullTrays = toNumber(
+      form.full_trays
+    );
+
+    const looseEggs = toNumber(
+      form.loose_eggs
+    );
+
+    const brokenEggs = toNumber(
+      form.broken_eggs
+    );
+
+    const rejectedEggs = toNumber(
+      form.rejected_eggs
+    );
+
+    if (
+      fullTrays < 0 ||
+      looseEggs < 0 ||
+      brokenEggs < 0 ||
+      rejectedEggs < 0
+    ) {
+      setFormError(
+        "Egg quantities cannot be negative."
+      );
+
+      return false;
+    }
+
+    if (
+      !Number.isInteger(fullTrays) ||
+      !Number.isInteger(looseEggs) ||
+      !Number.isInteger(brokenEggs) ||
+      !Number.isInteger(rejectedEggs)
+    ) {
+      setFormError(
+        "Egg quantities must be whole numbers."
+      );
+
+      return false;
+    }
+
+    if (
+      looseEggs >= EGGS_PER_TRAY
+    ) {
+      setFormError(
+        `Loose eggs must be between 0 and ${
+          EGGS_PER_TRAY - 1
+        }. For ${EGGS_PER_TRAY} eggs, add another full tray.`
+      );
+
+      return false;
     }
 
     const eggsCollected =
-      Number(form.eggs_collected) || 0;
-
-    const brokenEggs =
-      Number(form.broken_eggs) || 0;
-
-    const rejectedEggs =
-      Number(form.rejected_eggs) || 0;
-
-    const trays =
-      Number(form.trays) || 0;
-
-    if (
-      eggsCollected < 0 ||
-      brokenEggs < 0 ||
-      rejectedEggs < 0 ||
-      trays < 0
-    ) {
-      setFormError("Values cannot be negative.");
-      return;
-    }
+      fullTrays * EGGS_PER_TRAY +
+      looseEggs;
 
     if (
       eggsCollected === 0 &&
@@ -189,29 +366,140 @@ export default function EggProduction() {
       setFormError(
         "Please enter at least one egg quantity."
       );
+
+      return false;
+    }
+
+    return true;
+  };
+
+  /* =======================================================
+     SAVE
+  ======================================================= */
+
+  const save = async () => {
+    setFormError("");
+    setError("");
+
+    if (!validateForm()) {
       return;
     }
+
+    const fullTrays = toNumber(
+      form.full_trays
+    );
+
+    const looseEggs = toNumber(
+      form.loose_eggs
+    );
+
+    const brokenEggs = toNumber(
+      form.broken_eggs
+    );
+
+    const rejectedEggs = toNumber(
+      form.rejected_eggs
+    );
+
+    /*
+     * Good eggs:
+     *
+     * full trays × 30 + loose eggs
+     *
+     * Example:
+     *
+     * 20 trays + 15 eggs
+     * = 600 + 15
+     * = 615 eggs
+     */
+
+    const eggsCollected =
+      fullTrays * EGGS_PER_TRAY +
+      looseEggs;
+
+    /*
+     * Equivalent tray value:
+     *
+     * 615 / 30 = 20.5
+     */
+
+    const trays = Number(
+      (
+        eggsCollected /
+        EGGS_PER_TRAY
+      ).toFixed(2)
+    );
+
+    /*
+     * IMPORTANT:
+     *
+     * This is the exact payload sent to Django.
+     */
 
     const payload = {
       flock: Number(form.flock),
       date: form.date,
-      eggs_collected: eggsCollected,
-      broken_eggs: brokenEggs,
-      rejected_eggs: rejectedEggs,
+
+      eggs_collected: Number(
+        eggsCollected
+      ),
+
+      broken_eggs: Number(
+        brokenEggs
+      ),
+
+      rejected_eggs: Number(
+        rejectedEggs
+      ),
+
       trays: trays,
-      notes: form.notes || "",
+
+      notes:
+        form.notes?.trim() || "",
     };
+
+    /*
+     * DEBUG
+     */
+
+    console.log(
+      "=========================================="
+    );
+
+    console.log(
+      "EGG PRODUCTION PAYLOAD"
+    );
+
+    console.log(
+      JSON.stringify(
+        payload,
+        null,
+        2
+      )
+    );
+
+    console.log(
+      "=========================================="
+    );
 
     setSaving(true);
 
     try {
       let response;
 
+      /* ===================================================
+         UPDATE
+      =================================================== */
+
       if (editingId) {
-        // UPDATE
         response = await api.patch(
           `/production/${editingId}/`,
           payload
+        );
+
+        console.log(
+          "Egg production update response:",
+          response.data
         );
 
         setData((current) =>
@@ -221,11 +509,21 @@ export default function EggProduction() {
               : item
           )
         );
-      } else {
-        // CREATE
+      }
+
+      /* ===================================================
+         CREATE
+      =================================================== */
+
+      else {
         response = await api.post(
           "/production/",
           payload
+        );
+
+        console.log(
+          "Egg production create response:",
+          response.data
         );
 
         setData((current) => [
@@ -234,25 +532,28 @@ export default function EggProduction() {
         ]);
       }
 
+      /* ===================================================
+         SUCCESS
+      =================================================== */
+
       setShow(false);
       setEditingId(null);
 
-      setForm({
-        date: new Date().toISOString().split("T")[0],
-        flock:
-          flocks.length > 0
-            ? flocks[0].id
-            : "",
-        eggs_collected: "",
-        broken_eggs: "",
-        rejected_eggs: "",
-        trays: "",
-        notes: "",
-      });
+      setForm(
+        createEmptyForm(flocks)
+      );
     } catch (err) {
       console.error(
-        "Production save error:",
-        err
+        "=========================================="
+      );
+
+      console.error(
+        "EGG PRODUCTION SAVE ERROR"
+      );
+
+      console.error(
+        "Status:",
+        err.response?.status
       );
 
       console.error(
@@ -260,23 +561,46 @@ export default function EggProduction() {
         err.response?.data
       );
 
+      console.error(
+        "Payload sent:",
+        payload
+      );
+
+      console.error(
+        "=========================================="
+      );
+
       const backendError =
         err.response?.data;
 
       if (
         backendError &&
-        typeof backendError === "object"
+        typeof backendError ===
+          "object"
       ) {
         const messages =
-          Object.entries(backendError)
-            .map(([field, value]) => {
-              const message =
-                Array.isArray(value)
-                  ? value.join(", ")
-                  : String(value);
+          Object.entries(
+            backendError
+          )
+            .map(
+              ([
+                field,
+                value,
+              ]) => {
+                const message =
+                  Array.isArray(
+                    value
+                  )
+                    ? value.join(
+                        ", "
+                      )
+                    : String(
+                        value
+                      );
 
-              return `${field}: ${message}`;
-            })
+                return `${field}: ${message}`;
+              }
+            )
             .join(" ");
 
         setFormError(
@@ -293,18 +617,23 @@ export default function EggProduction() {
     }
   };
 
-  // =========================================================
-  // DELETE
-  // =========================================================
+  /* =======================================================
+     DELETE
+  ======================================================= */
 
-  const confirmDelete = (id) => {
+  const confirmDelete = (
+    id
+  ) => {
     setDeleteId(id);
   };
 
   const remove = async () => {
-    if (!deleteId) return;
+    if (!deleteId) {
+      return;
+    }
 
     setDeleting(true);
+    setError("");
 
     try {
       await api.delete(
@@ -313,7 +642,8 @@ export default function EggProduction() {
 
       setData((current) =>
         current.filter(
-          (item) => item.id !== deleteId
+          (item) =>
+            item.id !== deleteId
         )
       );
 
@@ -322,6 +652,11 @@ export default function EggProduction() {
       console.error(
         "Failed to delete production:",
         err
+      );
+
+      console.error(
+        "Backend response:",
+        err.response?.data
       );
 
       setError(
@@ -333,25 +668,56 @@ export default function EggProduction() {
     }
   };
 
-  // =========================================================
-  // HELPERS
-  // =========================================================
+  /* =======================================================
+     RECORD HELPERS
+  ======================================================= */
 
-  const getEggsCollected = (record) =>
-    Number(record.eggs_collected || 0);
+  const getEggsCollected = (
+    record
+  ) => {
+    return toNumber(
+      record.eggs_collected
+    );
+  };
 
-  const getBrokenEggs = (record) =>
-    Number(record.broken_eggs || 0);
+  const getBrokenEggs = (
+    record
+  ) => {
+    return toNumber(
+      record.broken_eggs
+    );
+  };
 
-  const getRejectedEggs = (record) =>
-    Number(record.rejected_eggs || 0);
+  const getRejectedEggs = (
+    record
+  ) => {
+    return toNumber(
+      record.rejected_eggs
+    );
+  };
 
-  const getTotalEggs = (record) =>
-    getEggsCollected(record) +
-    getBrokenEggs(record) +
-    getRejectedEggs(record);
+  const getTotalEggs = (
+    record
+  ) => {
+    return (
+      getEggsCollected(record) +
+      getBrokenEggs(record) +
+      getRejectedEggs(record)
+    );
+  };
 
-  const getFlockName = (record) => {
+  const getEquivalentTrays = (
+    record
+  ) => {
+    return (
+      getEggsCollected(record) /
+      EGGS_PER_TRAY
+    );
+  };
+
+  const getFlockName = (
+    record
+  ) => {
     if (record.flock_code) {
       return record.flock_code;
     }
@@ -360,11 +726,12 @@ export default function EggProduction() {
       return record.flock_name;
     }
 
-    const flock = flocks.find(
-      (item) =>
-        Number(item.id) ===
-        Number(record.flock)
-    );
+    const flock =
+      flocks.find(
+        (item) =>
+          Number(item.id) ===
+          Number(record.flock)
+      );
 
     return (
       flock?.code ||
@@ -373,53 +740,73 @@ export default function EggProduction() {
     );
   };
 
-  // =========================================================
-  // STATISTICS
-  // =========================================================
+  /* =======================================================
+     STATISTICS
+  ======================================================= */
 
   const statistics = useMemo(() => {
     const today =
-      new Date().toISOString().split("T")[0];
+      getToday();
 
-    const todayRecords = data.filter(
-      (record) =>
-        record.date === today
-    );
+    const todayRecords =
+      data.filter(
+        (record) =>
+          record.date === today
+      );
 
     const todayEggs =
       todayRecords.reduce(
         (sum, record) =>
-          sum + getEggsCollected(record),
+          sum +
+          getEggsCollected(
+            record
+          ),
         0
       );
 
     const totalCollected =
       data.reduce(
         (sum, record) =>
-          sum + getEggsCollected(record),
+          sum +
+          getEggsCollected(
+            record
+          ),
         0
       );
 
     const totalBroken =
       data.reduce(
         (sum, record) =>
-          sum + getBrokenEggs(record),
+          sum +
+          getBrokenEggs(
+            record
+          ),
         0
       );
 
     const totalRejected =
       data.reduce(
         (sum, record) =>
-          sum + getRejectedEggs(record),
+          sum +
+          getRejectedEggs(
+            record
+          ),
         0
       );
 
     const totalEggs =
       data.reduce(
         (sum, record) =>
-          sum + getTotalEggs(record),
+          sum +
+          getTotalEggs(
+            record
+          ),
         0
       );
+
+    const totalTrays =
+      totalCollected /
+      EGGS_PER_TRAY;
 
     const productionRate =
       totalEggs > 0
@@ -435,67 +822,96 @@ export default function EggProduction() {
       totalCollected,
       totalBroken,
       totalRejected,
+      totalEggs,
+      totalTrays,
       productionRate,
     };
   }, [data]);
 
-  // =========================================================
-  // RENDER
-  // =========================================================
+  /* =======================================================
+     RENDER
+  ======================================================= */
 
   return (
     <>
+      {/* =====================================================
+          PAGE HEADER
+      ===================================================== */}
+
       <PageHeader
         title="Egg Production"
         subtitle="Record and monitor daily egg production."
         action={
           <button
             className="btn btn-success"
-            onClick={openCreateModal}
+            onClick={
+              openCreateModal
+            }
             disabled={
               flocks.length === 0
             }
           >
             <i className="bi bi-plus-lg me-2" />
+
             Record Production
           </button>
         }
       />
 
-      {/* ERROR */}
+      {/* =====================================================
+          ERROR
+      ===================================================== */}
+
       {error && (
         <div className="alert alert-danger d-flex justify-content-between align-items-center">
-          <span>{error}</span>
+          <span>
+            {error}
+          </span>
 
           <button
+            type="button"
             className="btn btn-sm btn-outline-danger"
-            onClick={loadData}
+            onClick={
+              loadData
+            }
           >
             Retry
           </button>
         </div>
       )}
 
-      {/* STATISTICS */}
+      {/* =====================================================
+          STATISTICS
+      ===================================================== */}
+
       <div className="stats-grid">
+
         <StatCard
           title="Today's Eggs"
-          value={statistics.todayEggs.toLocaleString()}
-          subtitle="Eggs collected"
+          value={formatNumber(
+            statistics.todayEggs
+          )}
+          subtitle="Good eggs collected"
           icon="bi-egg"
         />
 
         <StatCard
           title="Eggs Collected"
-          value={statistics.totalCollected.toLocaleString()}
-          subtitle="Recorded period"
+          value={formatNumber(
+            statistics.totalCollected
+          )}
+          subtitle={`${formatTrays(
+            statistics.totalTrays
+          )} trays equivalent`}
           icon="bi-check-circle-fill"
           className="egg"
         />
 
         <StatCard
           title="Broken Eggs"
-          value={statistics.totalBroken.toLocaleString()}
+          value={formatNumber(
+            statistics.totalBroken
+          )}
           subtitle="Recorded period"
           icon="bi-x-circle-fill"
           className="mortality"
@@ -504,31 +920,41 @@ export default function EggProduction() {
         <StatCard
           title="Production Rate"
           value={`${statistics.productionRate}%`}
-          subtitle="Collected vs total"
+          subtitle="Good eggs vs total"
           icon="bi-graph-up-arrow"
           className="profit"
         />
+
       </div>
 
-      {/* TABLE */}
+      {/* =====================================================
+          TABLE
+      ===================================================== */}
+
       <div className="table-card">
+
         <div className="table-responsive">
+
           <table className="table align-middle">
+
             <thead>
               <tr>
                 <th>Date</th>
                 <th>Flock</th>
-                <th>Eggs Collected</th>
+                <th>Good Eggs</th>
+                <th>Equivalent Trays</th>
                 <th>Broken</th>
                 <th>Rejected</th>
-                <th>Trays</th>
-                <th>Total Eggs</th>
+                <th>Total Collected</th>
                 <th>Action</th>
               </tr>
             </thead>
 
             <tbody>
-              {loading ? (
+
+              {/* LOADING */}
+
+              {loading && (
                 <tr>
                   <td
                     colSpan="8"
@@ -544,115 +970,190 @@ export default function EggProduction() {
                     </div>
                   </td>
                 </tr>
-              ) : data.length === 0 ? (
-                <tr>
-                  <td
-                    colSpan="8"
-                    className="text-center text-muted py-5"
-                  >
-                    <i className="bi bi-egg fs-1 d-block mb-2" />
+              )}
 
-                    No egg production records found.
-                  </td>
-                </tr>
-              ) : (
-                data.map((record) => (
-                  <tr key={record.id}>
-                    <td>
-                      {record.date}
-                    </td>
+              {/* EMPTY */}
 
-                    <td>
-                      <span className="record-link">
-                        {getFlockName(record)}
-                      </span>
-                    </td>
+              {!loading &&
+                data.length === 0 && (
+                  <tr>
+                    <td
+                      colSpan="8"
+                      className="text-center text-muted py-5"
+                    >
+                      <i className="bi bi-egg fs-1 d-block mb-2" />
 
-                    <td>
-                      <strong>
-                        {getEggsCollected(
-                          record
-                        ).toLocaleString()}
-                      </strong>
-                    </td>
-
-                    <td>
-                      {getBrokenEggs(
-                        record
-                      ).toLocaleString()}
-                    </td>
-
-                    <td>
-                      {getRejectedEggs(
-                        record
-                      ).toLocaleString()}
-                    </td>
-
-                    <td>
-                      {Number(
-                        record.trays || 0
-                      ).toLocaleString()}
-                    </td>
-
-                    <td>
-                      <strong>
-                        {getTotalEggs(
-                          record
-                        ).toLocaleString()}
-                      </strong>
-                    </td>
-
-                    {/* ACTIONS */}
-                    <td>
-                      <div className="action-buttons">
-                        <button
-                          type="button"
-                          className="btn btn-sm btn-light"
-                          title="Edit"
-                          onClick={() =>
-                            openEditModal(
-                              record
-                            )
-                          }
-                        >
-                          <i className="bi bi-pencil text-primary" />
-                        </button>
-
-                        <button
-                          type="button"
-                          className="btn btn-sm btn-light"
-                          title="Delete"
-                          onClick={() =>
-                            confirmDelete(
-                              record.id
-                            )
-                          }
-                          disabled={deleting}
-                        >
-                          <i className="bi bi-trash text-danger" />
-                        </button>
-                      </div>
+                      No egg production records found.
                     </td>
                   </tr>
-                ))
-              )}
+                )}
+
+              {/* DATA */}
+
+              {!loading &&
+                data.length > 0 &&
+                data.map(
+                  (record) => (
+                    <tr
+                      key={
+                        record.id
+                      }
+                    >
+
+                      {/* DATE */}
+
+                      <td>
+                        {record.date}
+                      </td>
+
+                      {/* FLOCK */}
+
+                      <td>
+                        <span className="record-link">
+                          {getFlockName(
+                            record
+                          )}
+                        </span>
+                      </td>
+
+                      {/* GOOD EGGS */}
+
+                      <td>
+                        <strong>
+                          {formatNumber(
+                            getEggsCollected(
+                              record
+                            )
+                          )}
+                        </strong>
+
+                        <div className="small text-muted">
+                          Good eggs
+                        </div>
+                      </td>
+
+                      {/* TRAYS */}
+
+                      <td>
+                        <strong>
+                          {formatTrays(
+                            getEquivalentTrays(
+                              record
+                            )
+                          )}
+                        </strong>
+
+                        <div className="small text-muted">
+                          trays
+                        </div>
+                      </td>
+
+                      {/* BROKEN */}
+
+                      <td>
+                        {formatNumber(
+                          getBrokenEggs(
+                            record
+                          )
+                        )}
+                      </td>
+
+                      {/* REJECTED */}
+
+                      <td>
+                        {formatNumber(
+                          getRejectedEggs(
+                            record
+                          )
+                        )}
+                      </td>
+
+                      {/* TOTAL */}
+
+                      <td>
+                        <strong>
+                          {formatNumber(
+                            getTotalEggs(
+                              record
+                            )
+                          )}
+                        </strong>
+
+                        <div className="small text-muted">
+                          Good + broken + rejected
+                        </div>
+                      </td>
+
+                      {/* ACTION */}
+
+                      <td>
+                        <div className="action-buttons">
+
+                          <button
+                            type="button"
+                            className="btn btn-sm btn-light"
+                            title="Edit"
+                            onClick={() =>
+                              openEditModal(
+                                record
+                              )
+                            }
+                            disabled={
+                              saving ||
+                              deleting
+                            }
+                          >
+                            <i className="bi bi-pencil text-primary" />
+                          </button>
+
+                          <button
+                            type="button"
+                            className="btn btn-sm btn-light"
+                            title="Delete"
+                            onClick={() =>
+                              confirmDelete(
+                                record.id
+                              )
+                            }
+                            disabled={
+                              saving ||
+                              deleting
+                            }
+                          >
+                            <i className="bi bi-trash text-danger" />
+                          </button>
+
+                        </div>
+                      </td>
+
+                    </tr>
+                  )
+                )}
+
             </tbody>
+
           </table>
+
         </div>
+
       </div>
 
       {/* =====================================================
           CREATE / EDIT MODAL
-      ====================================================== */}
+      ===================================================== */}
 
       <Modal
         show={show}
         onHide={() =>
-          !saving && setShow(false)
+          !saving &&
+          setShow(false)
         }
         centered
       >
-        <Modal.Header closeButton={!saving}>
+
+        <Modal.Header
+          closeButton={!saving}
+        >
           <Modal.Title>
             {editingId
               ? "Edit Egg Production"
@@ -661,6 +1162,9 @@ export default function EggProduction() {
         </Modal.Header>
 
         <Modal.Body>
+
+          {/* FORM ERROR */}
+
           {formError && (
             <div className="alert alert-danger">
               {formError}
@@ -669,24 +1173,39 @@ export default function EggProduction() {
 
           <div className="row g-3">
 
-            {/* DATE */}
+            {/* =================================================
+                DATE
+            ================================================== */}
+
             <div className="col-md-6">
+
               <label className="form-label">
-                Date
+                Production Date
               </label>
 
               <input
                 type="date"
                 name="date"
                 className="form-control"
-                value={form.date}
-                onChange={handleChange}
-                disabled={saving}
+                value={
+                  form.date
+                }
+                onChange={
+                  handleChange
+                }
+                disabled={
+                  saving
+                }
               />
+
             </div>
 
-            {/* FLOCK */}
+            {/* =================================================
+                FLOCK
+            ================================================== */}
+
             <div className="col-md-6">
+
               <label className="form-label">
                 Flock
               </label>
@@ -694,105 +1213,370 @@ export default function EggProduction() {
               <select
                 name="flock"
                 className="form-select"
-                value={form.flock}
-                onChange={handleChange}
-                disabled={saving}
+                value={
+                  form.flock
+                }
+                onChange={
+                  handleChange
+                }
+                disabled={
+                  saving
+                }
               >
+
                 <option value="">
                   Select Flock
                 </option>
 
-                {flocks.map((flock) => (
-                  <option
-                    key={flock.id}
-                    value={flock.id}
-                  >
-                    {flock.code}
-                    {flock.name
-                      ? ` - ${flock.name}`
-                      : ""}
-                  </option>
-                ))}
+                {flocks.map(
+                  (flock) => (
+                    <option
+                      key={
+                        flock.id
+                      }
+                      value={
+                        flock.id
+                      }
+                    >
+                      {flock.code}
+
+                      {flock.name
+                        ? ` - ${flock.name}`
+                        : ""}
+                    </option>
+                  )
+                )}
+
               </select>
+
             </div>
 
-            {/* EGGS */}
-            <div className="col-md-4">
+            {/* =================================================
+                FULL TRAYS
+            ================================================== */}
+
+            <div className="col-md-6">
+
               <label className="form-label">
-                Eggs Collected
+                Full Trays
               </label>
 
-              <input
-                type="number"
-                min="0"
-                name="eggs_collected"
-                className="form-control"
-                value={
-                  form.eggs_collected
-                }
-                onChange={handleChange}
-                disabled={saving}
-              />
+              <div className="input-group">
+
+                <input
+                  type="number"
+                  min="0"
+                  step="1"
+                  name="full_trays"
+                  className="form-control"
+                  value={
+                    form.full_trays
+                  }
+                  onChange={
+                    handleChange
+                  }
+                  disabled={
+                    saving
+                  }
+                  placeholder="e.g. 20"
+                />
+
+                <span className="input-group-text">
+                  trays
+                </span>
+
+              </div>
+
+              <div className="form-text">
+                1 tray ={" "}
+                {EGGS_PER_TRAY} eggs
+              </div>
+
             </div>
 
-            {/* BROKEN */}
-            <div className="col-md-4">
+            {/* =================================================
+                LOOSE EGGS
+            ================================================== */}
+
+            <div className="col-md-6">
+
+              <label className="form-label">
+                Loose Eggs
+              </label>
+
+              <div className="input-group">
+
+                <input
+                  type="number"
+                  min="0"
+                  max={
+                    EGGS_PER_TRAY -
+                    1
+                  }
+                  step="1"
+                  name="loose_eggs"
+                  className="form-control"
+                  value={
+                    form.loose_eggs
+                  }
+                  onChange={
+                    handleChange
+                  }
+                  disabled={
+                    saving
+                  }
+                  placeholder="e.g. 15"
+                />
+
+                <span className="input-group-text">
+                  eggs
+                </span>
+
+              </div>
+
+              <div className="form-text">
+                0–
+                {EGGS_PER_TRAY -
+                  1}{" "}
+                eggs
+              </div>
+
+            </div>
+
+            {/* =================================================
+                CALCULATION
+            ================================================== */}
+
+            <div className="col-12">
+
+              <div className="border rounded p-3 bg-light">
+
+                <div className="d-flex justify-content-between align-items-center mb-2">
+
+                  <span className="text-muted">
+                    Full trays
+                  </span>
+
+                  <strong>
+                    {
+                      formCalculations.fullTrays
+                    }
+                  </strong>
+
+                </div>
+
+                <div className="d-flex justify-content-between align-items-center mb-2">
+
+                  <span className="text-muted">
+                    Loose eggs
+                  </span>
+
+                  <strong>
+                    {
+                      formCalculations.looseEggs
+                    }
+                  </strong>
+
+                </div>
+
+                <hr />
+
+                <div className="d-flex justify-content-between align-items-center mb-2">
+
+                  <span>
+                    <strong>
+                      Good Eggs Collected
+                    </strong>
+                  </span>
+
+                  <strong className="text-success fs-5">
+                    {formatNumber(
+                      formCalculations.eggsCollected
+                    )}{" "}
+                    eggs
+                  </strong>
+
+                </div>
+
+                <div className="d-flex justify-content-between align-items-center">
+
+                  <span className="text-muted">
+                    Equivalent
+                  </span>
+
+                  <strong>
+                    {formatTrays(
+                      formCalculations.equivalentTrays
+                    )}{" "}
+                    trays
+                  </strong>
+
+                </div>
+
+              </div>
+
+            </div>
+
+            {/* =================================================
+                BROKEN
+            ================================================== */}
+
+            <div className="col-md-6">
+
               <label className="form-label">
                 Broken Eggs
               </label>
 
-              <input
-                type="number"
-                min="0"
-                name="broken_eggs"
-                className="form-control"
-                value={
-                  form.broken_eggs
-                }
-                onChange={handleChange}
-                disabled={saving}
-              />
+              <div className="input-group">
+
+                <input
+                  type="number"
+                  min="0"
+                  step="1"
+                  name="broken_eggs"
+                  className="form-control"
+                  value={
+                    form.broken_eggs
+                  }
+                  onChange={
+                    handleChange
+                  }
+                  disabled={
+                    saving
+                  }
+                  placeholder="0"
+                />
+
+                <span className="input-group-text">
+                  eggs
+                </span>
+
+              </div>
+
+              <div className="form-text">
+                Not added to sellable inventory.
+              </div>
+
             </div>
 
-            {/* REJECTED */}
-            <div className="col-md-4">
+            {/* =================================================
+                REJECTED
+            ================================================== */}
+
+            <div className="col-md-6">
+
               <label className="form-label">
                 Rejected Eggs
               </label>
 
-              <input
-                type="number"
-                min="0"
-                name="rejected_eggs"
-                className="form-control"
-                value={
-                  form.rejected_eggs
-                }
-                onChange={handleChange}
-                disabled={saving}
-              />
+              <div className="input-group">
+
+                <input
+                  type="number"
+                  min="0"
+                  step="1"
+                  name="rejected_eggs"
+                  className="form-control"
+                  value={
+                    form.rejected_eggs
+                  }
+                  onChange={
+                    handleChange
+                  }
+                  disabled={
+                    saving
+                  }
+                  placeholder="0"
+                />
+
+                <span className="input-group-text">
+                  eggs
+                </span>
+
+              </div>
+
+              <div className="form-text">
+                Not added to sellable inventory.
+              </div>
+
             </div>
 
-            {/* TRAYS */}
-            <div className="col-md-6">
-              <label className="form-label">
-                Trays
-              </label>
+            {/* =================================================
+                SUMMARY
+            ================================================== */}
 
-              <input
-                type="number"
-                min="0"
-                step="0.01"
-                name="trays"
-                className="form-control"
-                value={form.trays}
-                onChange={handleChange}
-                disabled={saving}
-              />
-            </div>
-
-            {/* NOTES */}
             <div className="col-12">
+
+              <div className="alert alert-success mb-0">
+
+                <div className="d-flex justify-content-between">
+
+                  <span>
+                    Good eggs:
+                  </span>
+
+                  <strong>
+                    {formatNumber(
+                      formCalculations.eggsCollected
+                    )}
+                  </strong>
+
+                </div>
+
+                <div className="d-flex justify-content-between">
+
+                  <span>
+                    Broken:
+                  </span>
+
+                  <strong>
+                    {formatNumber(
+                      formCalculations.brokenEggs
+                    )}
+                  </strong>
+
+                </div>
+
+                <div className="d-flex justify-content-between">
+
+                  <span>
+                    Rejected:
+                  </span>
+
+                  <strong>
+                    {formatNumber(
+                      formCalculations.rejectedEggs
+                    )}
+                  </strong>
+
+                </div>
+
+                <hr />
+
+                <div className="d-flex justify-content-between">
+
+                  <strong>
+                    Total Eggs Collected
+                  </strong>
+
+                  <strong>
+                    {formatNumber(
+                      formCalculations.totalPhysicallyCollected
+                    )}
+                  </strong>
+
+                </div>
+
+              </div>
+
+            </div>
+
+            {/* =================================================
+                NOTES
+            ================================================== */}
+
+            <div className="col-12">
+
               <label className="form-label">
                 Notes
               </label>
@@ -801,23 +1585,38 @@ export default function EggProduction() {
                 name="notes"
                 rows="3"
                 className="form-control"
-                value={form.notes}
-                onChange={handleChange}
+                value={
+                  form.notes
+                }
+                onChange={
+                  handleChange
+                }
                 placeholder="Optional notes..."
-                disabled={saving}
+                disabled={
+                  saving
+                }
               />
+
             </div>
 
           </div>
+
         </Modal.Body>
 
+        {/* =====================================================
+            FOOTER
+        ===================================================== */}
+
         <Modal.Footer>
+
           <Button
             variant="light"
             onClick={() =>
               setShow(false)
             }
-            disabled={saving}
+            disabled={
+              saving
+            }
           >
             Cancel
           </Button>
@@ -830,6 +1629,7 @@ export default function EggProduction() {
               flocks.length === 0
             }
           >
+
             {saving ? (
               <>
                 <span className="spinner-border spinner-border-sm me-2" />
@@ -844,21 +1644,28 @@ export default function EggProduction() {
                   : "Save Record"}
               </>
             )}
+
           </Button>
+
         </Modal.Footer>
+
       </Modal>
 
       {/* =====================================================
           DELETE CONFIRMATION
-      ====================================================== */}
+      ===================================================== */}
 
       <ConfirmModal
-        show={!!deleteId}
+        show={
+          !!deleteId
+        }
         onHide={() =>
           !deleting &&
           setDeleteId(null)
         }
-        onConfirm={remove}
+        onConfirm={
+          remove
+        }
       />
     </>
   );
