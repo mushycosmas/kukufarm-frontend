@@ -3,7 +3,7 @@ import { NavLink } from "react-router-dom";
 import "../../styles/sidebar.css";
 import api from "../../services/api";
 
-const groups = [
+const navigationGroups = [
   {
     title: "MAIN",
     items: [
@@ -121,15 +121,23 @@ export default function Sidebar({ mobileOpen, onClose }) {
       try {
         const response = await api.get("/settings/");
 
-        if (!mounted) return;
+        if (!mounted) {
+          return;
+        }
 
-        const name = response.data?.farm_name?.trim();
+        const name = response.data?.farm_name;
 
-        if (name) {
-          setFarmName(name);
+        if (
+          typeof name === "string" &&
+          name.trim().length > 0
+        ) {
+          setFarmName(name.trim());
         }
       } catch (error) {
-        console.error("Failed to load farm settings:", error);
+        console.error(
+          "Failed to load farm settings:",
+          error
+        );
       } finally {
         if (mounted) {
           setLoadingFarm(false);
@@ -144,23 +152,40 @@ export default function Sidebar({ mobileOpen, onClose }) {
     };
   }, []);
 
+  const handleNavigation = () => {
+    if (typeof onClose === "function") {
+      onClose();
+    }
+  };
+
   return (
     <>
-      {/* Mobile Overlay */}
+      {/* =====================================================
+          MOBILE OVERLAY
+      ====================================================== */}
       {mobileOpen && (
         <div
           className="sidebar-overlay"
-          onClick={onClose}
+          onClick={handleNavigation}
           aria-hidden="true"
         />
       )}
 
+      {/* =====================================================
+          SIDEBAR
+      ====================================================== */}
       <aside
-        className={`sidebar ${mobileOpen ? "open" : ""}`}
+        className={`sidebar ${
+          mobileOpen ? "open" : ""
+        }`}
         aria-label="Main navigation"
       >
-        {/* Brand */}
+
+        {/* ===================================================
+            BRAND
+        ==================================================== */}
         <div className="brand">
+
           <div className="brand-icon">
             <i className="bi bi-egg-fried"></i>
           </div>
@@ -169,58 +194,118 @@ export default function Sidebar({ mobileOpen, onClose }) {
             <strong>KukuFarm</strong>
             <small>Farm Management</small>
           </div>
+
         </div>
 
-        {/* Current Farm */}
+        {/* ===================================================
+            CURRENT FARM
+        ==================================================== */}
         <div className="farm-badge">
+
           <div className="farm-badge-icon">
             <i className="bi bi-house-heart-fill"></i>
           </div>
 
           <div className="farm-badge-content">
-            <span>Current Farm</span>
+
+            <span>
+              Current Farm
+            </span>
 
             <strong
               title={farmName}
-              className={loadingFarm ? "text-muted" : ""}
+              className={
+                loadingFarm
+                  ? "text-muted"
+                  : ""
+              }
             >
-              {loadingFarm ? "Loading..." : farmName}
+              {loadingFarm
+                ? "Loading..."
+                : farmName}
             </strong>
+
           </div>
 
           <i className="bi bi-chevron-down farm-chevron"></i>
+
         </div>
 
-        {/* Navigation */}
-        <nav className="sidebar-navigation">
-          {groups.map((group) => (
-            <div className="nav-group" key={group.title}>
-              <div className="nav-title">{group.title}</div>
+        {/* ===================================================
+            NAVIGATION
+        ==================================================== */}
+        <nav
+          className="sidebar-navigation"
+          aria-label="Farm management navigation"
+        >
 
-              <div className="nav-items">
-                {group.items.map((item) => (
-                  <NavLink
-                    key={item.to}
-                    to={item.to}
-                    end={item.to === "/"}
-                    onClick={onClose}
-                    className={({ isActive }) =>
-                      `nav-item ${isActive ? "active" : ""}`
-                    }
-                  >
-                    <span className="nav-icon">
-                      <i className={`bi ${item.icon}`}></i>
-                    </span>
+          {navigationGroups.map(
+            (group) => (
+              <div
+                className="nav-group"
+                key={group.title}
+              >
 
-                    <span className="nav-label">{item.label}</span>
-                  </NavLink>
-                ))}
+                {/* Group title */}
+                <div className="nav-title">
+                  {group.title}
+                </div>
+
+                {/* Group items */}
+                <div className="nav-items">
+
+                  {group.items.map(
+                    (item) => (
+                      <NavLink
+                        key={item.to}
+                        to={item.to}
+                        end={
+                          item.to === "/"
+                        }
+                        onClick={
+                          handleNavigation
+                        }
+                        className={({
+                          isActive,
+                        }) =>
+                          [
+                            "nav-item",
+                            isActive
+                              ? "active"
+                              : "",
+                          ]
+                            .filter(Boolean)
+                            .join(" ")
+                        }
+                        aria-label={
+                          item.label
+                        }
+                      >
+
+                        <span className="nav-icon">
+                          <i
+                            className={`bi ${item.icon}`}
+                            aria-hidden="true"
+                          ></i>
+                        </span>
+
+                        <span className="nav-label">
+                          {item.label}
+                        </span>
+
+                      </NavLink>
+                    )
+                  )}
+
+                </div>
+
               </div>
-            </div>
-          ))}
+            )
+          )}
+
         </nav>
+
       </aside>
     </>
   );
 }
-

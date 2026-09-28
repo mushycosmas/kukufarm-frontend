@@ -3,8 +3,25 @@ import PageHeader from "../../components/common/PageHeader";
 import StatCard from "../../components/dashboard/StatCard";
 import api from "../../services/api";
 
+const EGGS_PER_TRAY = 30;
+
 function formatNumber(value) {
   return Number(value || 0).toLocaleString("en-TZ");
+}
+
+function formatDecimal(value) {
+  return Number(value || 0).toLocaleString("en-TZ", {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 2,
+  });
+}
+
+function TrayValue({ eggs }) {
+  return (
+    <small className="text-muted d-block mt-1">
+      {formatDecimal(Number(eggs || 0) / EGGS_PER_TRAY)} trays
+    </small>
+  );
 }
 
 export default function EggInventory() {
@@ -36,21 +53,13 @@ export default function EggInventory() {
       const data = response.data || {};
 
       setInventory({
-        total_collected: Number(
-          data.total_collected || 0
-        ),
+        total_collected: Number(data.total_collected || 0),
 
-        total_broken: Number(
-          data.total_broken || 0
-        ),
+        total_broken: Number(data.total_broken || 0),
 
-        total_rejected: Number(
-          data.total_rejected || 0
-        ),
+        total_rejected: Number(data.total_rejected || 0),
 
-        total_sold: Number(
-          data.total_sold || 0
-        ),
+        total_sold: Number(data.total_sold || 0),
 
         available_eggs: Number(
           data.available_eggs ??
@@ -58,13 +67,9 @@ export default function EggInventory() {
             0
         ),
 
-        total_trays: Number(
-          data.total_trays || 0
-        ),
+        total_trays: Number(data.total_trays || 0),
 
-        total_eggs: Number(
-          data.total_eggs || 0
-        ),
+        total_eggs: Number(data.total_eggs || 0),
 
         current_stock: Number(
           data.current_stock ??
@@ -106,7 +111,11 @@ export default function EggInventory() {
           >
             {loading ? (
               <>
-                <span className="spinner-border spinner-border-sm me-2" />
+                <span
+                  className="spinner-border spinner-border-sm me-2"
+                  role="status"
+                  aria-hidden="true"
+                />
                 Loading...
               </>
             ) : (
@@ -137,54 +146,110 @@ export default function EggInventory() {
       {/* SUMMARY */}
       <div className="stats-grid">
 
+        {/* CURRENT STOCK */}
         <StatCard
           title="Current Egg Stock"
-          value={formatNumber(
-            inventory.current_stock
-          )}
+          value={
+            <>
+              <div>
+                {formatNumber(
+                  inventory.current_stock
+                )}
+              </div>
+
+              <TrayValue
+                eggs={inventory.current_stock}
+              />
+            </>
+          }
           subtitle="Available good eggs"
           icon="bi-box-seam"
           className="egg"
         />
 
+        {/* EGGS COLLECTED */}
         <StatCard
           title="Eggs Collected"
-          value={formatNumber(
-            inventory.total_collected
-          )}
+          value={
+            <>
+              <div>
+                {formatNumber(
+                  inventory.total_collected
+                )}
+              </div>
+
+              <TrayValue
+                eggs={inventory.total_collected}
+              />
+            </>
+          }
           subtitle="Usable eggs collected"
           icon="bi-egg"
         />
 
+        {/* EGGS SOLD */}
         <StatCard
           title="Eggs Sold"
-          value={formatNumber(
-            inventory.total_sold
-          )}
+          value={
+            <>
+              <div>
+                {formatNumber(
+                  inventory.total_sold
+                )}
+              </div>
+
+              <TrayValue
+                eggs={inventory.total_sold}
+              />
+            </>
+          }
           subtitle="Eggs deducted from stock"
           icon="bi-cart-check-fill"
           className="profit"
         />
 
+        {/* BROKEN EGGS */}
         <StatCard
           title="Broken Eggs"
-          value={formatNumber(
-            inventory.total_broken
-          )}
+          value={
+            <>
+              <div>
+                {formatNumber(
+                  inventory.total_broken
+                )}
+              </div>
+
+              <TrayValue
+                eggs={inventory.total_broken}
+              />
+            </>
+          }
           subtitle="Recorded broken eggs"
           icon="bi-x-circle-fill"
           className="mortality"
         />
 
+        {/* REJECTED EGGS */}
         <StatCard
           title="Rejected Eggs"
-          value={formatNumber(
-            inventory.total_rejected
-          )}
+          value={
+            <>
+              <div>
+                {formatNumber(
+                  inventory.total_rejected
+                )}
+              </div>
+
+              <TrayValue
+                eggs={inventory.total_rejected}
+              />
+            </>
+          }
           subtitle="Recorded rejected eggs"
           icon="bi-exclamation-circle-fill"
         />
 
+        {/* TOTAL TRAYS */}
         <StatCard
           title="Total Trays"
           value={formatNumber(
@@ -215,6 +280,7 @@ export default function EggInventory() {
             <span className="badge bg-success">
               Live Summary
             </span>
+
           </div>
 
           {loading ? (
@@ -267,6 +333,14 @@ export default function EggInventory() {
                           inventory.current_stock
                         )}
                       </strong>
+
+                      <div className="small text-muted">
+                        {formatDecimal(
+                          inventory.current_stock /
+                            EGGS_PER_TRAY
+                        )}{" "}
+                        trays
+                      </div>
                     </td>
 
                     <td>
@@ -292,6 +366,14 @@ export default function EggInventory() {
                       {formatNumber(
                         inventory.total_collected
                       )}
+
+                      <div className="small text-muted">
+                        {formatDecimal(
+                          inventory.total_collected /
+                            EGGS_PER_TRAY
+                        )}{" "}
+                        trays
+                      </div>
                     </td>
 
                     <td>
@@ -313,6 +395,14 @@ export default function EggInventory() {
                           inventory.total_sold
                         )}
                       </strong>
+
+                      <div className="small text-muted">
+                        {formatDecimal(
+                          inventory.total_sold /
+                            EGGS_PER_TRAY
+                        )}{" "}
+                        trays
+                      </div>
                     </td>
 
                     <td>
@@ -332,6 +422,14 @@ export default function EggInventory() {
                       {formatNumber(
                         inventory.total_broken
                       )}
+
+                      <div className="small text-muted">
+                        {formatDecimal(
+                          inventory.total_broken /
+                            EGGS_PER_TRAY
+                        )}{" "}
+                        trays
+                      </div>
                     </td>
 
                     <td>
@@ -351,6 +449,14 @@ export default function EggInventory() {
                       {formatNumber(
                         inventory.total_rejected
                       )}
+
+                      <div className="small text-muted">
+                        {formatDecimal(
+                          inventory.total_rejected /
+                            EGGS_PER_TRAY
+                        )}{" "}
+                        trays
+                      </div>
                     </td>
 
                     <td>
@@ -363,13 +469,17 @@ export default function EggInventory() {
                   {/* TRAYS */}
                   <tr>
                     <td>
-                      Total Trays
+                      <strong>
+                        Total Trays
+                      </strong>
                     </td>
 
                     <td className="text-end">
-                      {formatNumber(
-                        inventory.total_trays
-                      )}
+                      <strong>
+                        {formatNumber(
+                          inventory.total_trays
+                        )}
+                      </strong>
                     </td>
 
                     <td>
@@ -393,6 +503,14 @@ export default function EggInventory() {
                           inventory.total_eggs
                         )}
                       </strong>
+
+                      <div className="small text-muted">
+                        {formatDecimal(
+                          inventory.total_eggs /
+                            EGGS_PER_TRAY
+                        )}{" "}
+                        trays
+                      </div>
                     </td>
 
                     <td>
@@ -403,9 +521,12 @@ export default function EggInventory() {
                   </tr>
 
                 </tbody>
+
               </table>
+
             </div>
           )}
+
         </div>
       </div>
 
@@ -440,6 +561,23 @@ export default function EggInventory() {
                 eggs available
               </strong>
 
+              <br />
+
+              <span className="text-muted">
+                {formatNumber(
+                  inventory.current_stock
+                )}{" "}
+                eggs ÷ {EGGS_PER_TRAY} ={" "}
+
+                <strong>
+                  {formatDecimal(
+                    inventory.current_stock /
+                      EGGS_PER_TRAY
+                  )}{" "}
+                  trays
+                </strong>
+              </span>
+
             </div>
 
           </div>
@@ -473,7 +611,8 @@ export default function EggInventory() {
               <br />
 
               <span className="d-block mt-1">
-                <strong>Tray:</strong> 1 tray = 30 eggs.
+                <strong>Tray:</strong>{" "}
+                1 tray = {EGGS_PER_TRAY} eggs.
               </span>
 
             </div>
