@@ -8,7 +8,6 @@ import RecentActivities from "../components/dashboard/RecentActivities";
 
 import api from "../services/api";
 
-
 /*
 |--------------------------------------------------------------------------
 | Helpers
@@ -31,22 +30,17 @@ const toArray = (data) => {
   return [];
 };
 
-
 const toNumber = (value) => {
   const number = Number(value);
 
-  return Number.isFinite(number)
-    ? number
-    : 0;
+  return Number.isFinite(number) ? number : 0;
 };
-
 
 const formatNumber = (value) => {
   return new Intl.NumberFormat("en-TZ").format(
     Math.round(toNumber(value))
   );
 };
-
 
 const formatCurrency = (value) => {
   const number = toNumber(value);
@@ -62,7 +56,6 @@ const formatCurrency = (value) => {
   return `TZS ${formatNumber(number)}`;
 };
 
-
 const getDateString = (date = new Date()) => {
   const year = date.getFullYear();
 
@@ -77,20 +70,15 @@ const getDateString = (date = new Date()) => {
   return `${year}-${month}-${day}`;
 };
 
-
 const isSameDate = (value, dateString) => {
   if (!value) {
     return false;
   }
 
-  const date = String(value).substring(
-    0,
-    10
-  );
+  const date = String(value).substring(0, 10);
 
   return date === dateString;
 };
-
 
 const isSameMonth = (value, date) => {
   if (!value) {
@@ -104,13 +92,10 @@ const isSameMonth = (value, date) => {
   }
 
   return (
-    itemDate.getFullYear() ===
-      date.getFullYear() &&
-    itemDate.getMonth() ===
-      date.getMonth()
+    itemDate.getFullYear() === date.getFullYear() &&
+    itemDate.getMonth() === date.getMonth()
   );
 };
-
 
 const getItemDate = (item) => {
   return (
@@ -125,6 +110,64 @@ const getItemDate = (item) => {
   );
 };
 
+/*
+|--------------------------------------------------------------------------
+| Get flock bird count
+|--------------------------------------------------------------------------
+|
+| The backend may expose the flock population using different field names.
+| We check the current population fields first.
+|
+*/
+
+const getFlockBirdCount = (flock) => {
+  if (!flock) {
+    return 0;
+  }
+
+  /*
+   * Current population fields.
+   */
+  const currentBirds =
+    flock.current_birds ??
+    flock.current_chickens ??
+    flock.current_count ??
+    flock.current_quantity ??
+    flock.current_population ??
+    flock.number_of_birds ??
+    flock.number_of_chickens ??
+    flock.birds ??
+    flock.chickens ??
+    flock.bird_count ??
+    flock.chicken_count ??
+    flock.quantity ??
+    null;
+
+  if (
+    currentBirds !== null &&
+    currentBirds !== undefined &&
+    currentBirds !== ""
+  ) {
+    return toNumber(currentBirds);
+  }
+
+  /*
+   * Initial population as fallback.
+   */
+  const initialBirds =
+    flock.initial_birds ??
+    flock.initial_chickens ??
+    flock.initial_count ??
+    flock.initial_quantity ??
+    flock.initial_population ??
+    flock.starting_birds ??
+    flock.starting_chickens ??
+    flock.opening_birds ??
+    flock.opening_chickens ??
+    0;
+
+  return toNumber(initialBirds);
+};
 
 /*
 |--------------------------------------------------------------------------
@@ -151,7 +194,6 @@ export default function Dashboard() {
 
   const [expenses, setExpenses] = useState([]);
 
-
   /*
   |--------------------------------------------------------------------------
   | Current date
@@ -167,7 +209,6 @@ export default function Dashboard() {
     () => getDateString(today),
     [today]
   );
-
 
   /*
   |--------------------------------------------------------------------------
@@ -193,8 +234,7 @@ export default function Dashboard() {
             "/auth/me/"
           );
 
-          currentUser =
-            userResponse.data;
+          currentUser = userResponse.data;
         } catch (userError) {
           /*
            * Try accounts/me if auth/me is not available.
@@ -204,13 +244,11 @@ export default function Dashboard() {
               "/accounts/me/"
             );
 
-            currentUser =
-              userResponse.data;
+            currentUser = userResponse.data;
           } catch {
             currentUser = null;
           }
         }
-
 
         /*
          * Load all dashboard sources.
@@ -231,11 +269,9 @@ export default function Dashboard() {
             api.get("/expenses/"),
           ]);
 
-
         if (!mounted) {
           return;
         }
-
 
         const [
           flocksResponse,
@@ -246,7 +282,6 @@ export default function Dashboard() {
           expensesResponse,
         ] = responses;
 
-
         /*
          * Flocks
          */
@@ -254,13 +289,33 @@ export default function Dashboard() {
           flocksResponse.status ===
           "fulfilled"
         ) {
-          setFlocks(
-            toArray(
-              flocksResponse.value.data
-            )
+          const flockData = toArray(
+            flocksResponse.value.data
+          );
+
+          /*
+           * Helpful debugging information.
+           *
+           * Open browser:
+           * F12 -> Console
+           */
+          console.log(
+            "FLOCK API RESPONSE:",
+            flocksResponse.value.data
+          );
+
+          console.log(
+            "FLOCKS ARRAY:",
+            flockData
+          );
+
+          setFlocks(flockData);
+        } else {
+          console.error(
+            "Failed to load flocks:",
+            flocksResponse.reason
           );
         }
-
 
         /*
          * Egg production
@@ -274,8 +329,12 @@ export default function Dashboard() {
               productionResponse.value.data
             )
           );
+        } else {
+          console.error(
+            "Failed to load production:",
+            productionResponse.reason
+          );
         }
-
 
         /*
          * Feed
@@ -289,8 +348,12 @@ export default function Dashboard() {
               feedResponse.value.data
             )
           );
+        } else {
+          console.error(
+            "Failed to load feed:",
+            feedResponse.reason
+          );
         }
-
 
         /*
          * Mortality
@@ -304,8 +367,12 @@ export default function Dashboard() {
               mortalityResponse.value.data
             )
           );
+        } else {
+          console.error(
+            "Failed to load mortality:",
+            mortalityResponse.reason
+          );
         }
-
 
         /*
          * Sales
@@ -319,8 +386,12 @@ export default function Dashboard() {
               salesResponse.value.data
             )
           );
+        } else {
+          console.error(
+            "Failed to load sales:",
+            salesResponse.reason
+          );
         }
-
 
         /*
          * Expenses
@@ -334,11 +405,14 @@ export default function Dashboard() {
               expensesResponse.value.data
             )
           );
+        } else {
+          console.error(
+            "Failed to load expenses:",
+            expensesResponse.reason
+          );
         }
 
-
         setUser(currentUser);
-
 
         /*
          * Check if every request failed.
@@ -349,7 +423,6 @@ export default function Dashboard() {
               response.status ===
               "rejected"
           );
-
 
         if (
           failedRequests.length ===
@@ -380,15 +453,12 @@ export default function Dashboard() {
       }
     };
 
-
     loadDashboard();
-
 
     return () => {
       mounted = false;
     };
   }, []);
-
 
   /*
   |--------------------------------------------------------------------------
@@ -397,37 +467,55 @@ export default function Dashboard() {
   */
 
   const totalChickens = useMemo(() => {
-    return flocks
-      .filter((flock) => {
-        const status =
-          String(
-            flock.status || ""
-          ).toLowerCase();
+    const activeFlocks = flocks.filter(
+      (flock) => {
+        const status = String(
+          flock.status || ""
+        ).toLowerCase();
 
         return (
-          !status ||
-          status === "active"
+          status === "active" ||
+          !status
         );
-      })
-      .reduce(
-        (total, flock) => {
-          return (
-            total +
-            toNumber(
-              flock.current_birds ??
-                flock.current_chickens ??
-                flock.chickens ??
-                flock.bird_count ??
-                flock.quantity ??
-                flock.initial_birds ??
-                0
-            )
-          );
-        },
-        0
-      );
-  }, [flocks]);
+      }
+    );
 
+    const total = activeFlocks.reduce(
+      (total, flock) => {
+        const birds =
+          getFlockBirdCount(flock);
+
+        /*
+         * Debug each flock so we can see
+         * exactly what the backend is returning.
+         */
+        console.log(
+          "FLOCK POPULATION:",
+          {
+            id: flock.id,
+            name:
+              flock.name ||
+              flock.flock_name ||
+              flock.code ||
+              "Unnamed flock",
+            status: flock.status,
+            birds,
+            raw: flock,
+          }
+        );
+
+        return total + birds;
+      },
+      0
+    );
+
+    console.log(
+      "TOTAL CHICKENS:",
+      total
+    );
+
+    return total;
+  }, [flocks]);
 
   /*
   |--------------------------------------------------------------------------
@@ -437,10 +525,9 @@ export default function Dashboard() {
 
   const activeFlocks = useMemo(() => {
     return flocks.filter((flock) => {
-      const status =
-        String(
-          flock.status || ""
-        ).toLowerCase();
+      const status = String(
+        flock.status || ""
+      ).toLowerCase();
 
       return (
         status === "active" ||
@@ -448,7 +535,6 @@ export default function Dashboard() {
       );
     }).length;
   }, [flocks]);
-
 
   /*
   |--------------------------------------------------------------------------
@@ -485,7 +571,6 @@ export default function Dashboard() {
     todayString,
   ]);
 
-
   /*
   |--------------------------------------------------------------------------
   | Egg production rate
@@ -506,7 +591,6 @@ export default function Dashboard() {
     todaysEggs,
     totalChickens,
   ]);
-
 
   /*
   |--------------------------------------------------------------------------
@@ -532,7 +616,6 @@ export default function Dashboard() {
       0
     );
   }, [feedStock]);
-
 
   /*
   |--------------------------------------------------------------------------
@@ -569,7 +652,6 @@ export default function Dashboard() {
     todayString,
   ]);
 
-
   /*
   |--------------------------------------------------------------------------
   | Mortality rate
@@ -590,7 +672,6 @@ export default function Dashboard() {
     todaysMortality,
     totalChickens,
   ]);
-
 
   /*
   |--------------------------------------------------------------------------
@@ -627,7 +708,6 @@ export default function Dashboard() {
     todayString,
   ]);
 
-
   /*
   |--------------------------------------------------------------------------
   | Today's sales transactions
@@ -646,7 +726,6 @@ export default function Dashboard() {
     sales,
     todayString,
   ]);
-
 
   /*
   |--------------------------------------------------------------------------
@@ -682,7 +761,6 @@ export default function Dashboard() {
     today,
   ]);
 
-
   /*
   |--------------------------------------------------------------------------
   | Monthly expense transactions
@@ -702,7 +780,6 @@ export default function Dashboard() {
       expenses,
       today,
     ]);
-
 
   /*
   |--------------------------------------------------------------------------
@@ -739,7 +816,6 @@ export default function Dashboard() {
     today,
   ]);
 
-
   /*
   |--------------------------------------------------------------------------
   | Monthly profit
@@ -749,7 +825,6 @@ export default function Dashboard() {
   const monthlyProfit =
     monthlySales -
     monthlyExpenses;
-
 
   /*
   |--------------------------------------------------------------------------
@@ -772,7 +847,6 @@ export default function Dashboard() {
     monthlyProfit,
   ]);
 
-
   /*
   |--------------------------------------------------------------------------
   | User name
@@ -791,7 +865,6 @@ export default function Dashboard() {
     );
   }, [user]);
 
-
   /*
   |--------------------------------------------------------------------------
   | Farm name
@@ -802,7 +875,6 @@ export default function Dashboard() {
     user?.farm?.name ||
     user?.farm_name ||
     "Kelvin Poultry Farm";
-
 
   /*
   |--------------------------------------------------------------------------
@@ -820,7 +892,6 @@ export default function Dashboard() {
         year: "numeric",
       }
     );
-
 
   /*
   |--------------------------------------------------------------------------
@@ -854,7 +925,6 @@ export default function Dashboard() {
     );
   }
 
-
   /*
   |--------------------------------------------------------------------------
   | Dashboard
@@ -877,8 +947,7 @@ export default function Dashboard() {
         }
       />
 
-
-      {/* Error */}
+      {/* ERROR */}
       {error && (
         <div
           className="alert alert-warning d-flex align-items-center"
@@ -892,8 +961,7 @@ export default function Dashboard() {
         </div>
       )}
 
-
-      {/* Welcome */}
+      {/* WELCOME */}
       <div className="welcome-strip">
         <div>
           <strong>
@@ -911,6 +979,7 @@ export default function Dashboard() {
           <span>
             --°C
             <br />
+
             <small>
               Weather unavailable
             </small>
@@ -918,13 +987,15 @@ export default function Dashboard() {
         </div>
       </div>
 
-
-      {/* Farm statistics */}
+      {/* FARM STATISTICS */}
       <div className="stats-grid">
 
+        {/* TOTAL CHICKENS */}
         <StatCard
           title="Total Chickens"
-          value={formatNumber(totalChickens)}
+          value={formatNumber(
+            totalChickens
+          )}
           subtitle={`${activeFlocks} active ${
             activeFlocks === 1
               ? "flock"
@@ -934,10 +1005,12 @@ export default function Dashboard() {
           trend=""
         />
 
-
+        {/* TODAY'S EGGS */}
         <StatCard
           title="Today's Eggs"
-          value={formatNumber(todaysEggs)}
+          value={formatNumber(
+            todaysEggs
+          )}
           subtitle={`${eggProductionRate.toFixed(
             1
           )}% production rate`}
@@ -946,7 +1019,7 @@ export default function Dashboard() {
           className="egg"
         />
 
-
+        {/* FEED STOCK */}
         <StatCard
           title="Feed Stock"
           value={`${formatNumber(
@@ -958,7 +1031,7 @@ export default function Dashboard() {
           className="feed"
         />
 
-
+        {/* TODAY'S MORTALITY */}
         <StatCard
           title="Today's Mortality"
           value={formatNumber(
@@ -974,10 +1047,10 @@ export default function Dashboard() {
 
       </div>
 
-
-      {/* Financial statistics */}
+      {/* FINANCIAL STATISTICS */}
       <div className="stats-grid financial-stats">
 
+        {/* TODAY'S SALES */}
         <StatCard
           title="Today's Sales"
           value={formatCurrency(
@@ -993,7 +1066,7 @@ export default function Dashboard() {
           className="sales"
         />
 
-
+        {/* MONTHLY EXPENSES */}
         <StatCard
           title="Monthly Expenses"
           value={formatCurrency(
@@ -1009,7 +1082,7 @@ export default function Dashboard() {
           className="expense"
         />
 
-
+        {/* MONTHLY PROFIT */}
         <StatCard
           title="Monthly Profit"
           value={formatCurrency(
@@ -1025,9 +1098,9 @@ export default function Dashboard() {
 
       </div>
 
-
-      {/* Charts */}
+      {/* CHARTS */}
       <div className="charts-grid">
+
         <EggProductionChart
           data={eggProduction}
         />
@@ -1036,10 +1109,10 @@ export default function Dashboard() {
           sales={sales}
           expenses={expenses}
         />
+
       </div>
 
-
-      {/* Recent activities */}
+      {/* RECENT ACTIVITIES */}
       <RecentActivities
         sales={sales}
         expenses={expenses}
