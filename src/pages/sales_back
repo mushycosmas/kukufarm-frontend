@@ -1,35 +1,70 @@
-import React, { useEffect, useMemo, useState } from "react";
+
+import React, {
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
+
 import PageHeader from "../components/common/PageHeader";
 import api from "../services/api";
 
 const EGGS_PER_TRAY = 30;
 
+/*
+ * ============================================================
+ * HELPERS
+ * ============================================================
+ */
+
 const getToday = () => {
-  const now = new Date();
-
-  const year = now.getFullYear();
-  const month = String(now.getMonth() + 1).padStart(2, "0");
-  const day = String(now.getDate()).padStart(2, "0");
-
-  return `${year}-${month}-${day}`;
+  return new Date()
+    .toISOString()
+    .slice(0, 10);
 };
 
 const paymentMethods = [
-  { value: "cash", label: "Cash" },
-  { value: "mobile", label: "Mobile Money" },
-  { value: "bank", label: "Bank" },
-  { value: "credit", label: "Credit" },
+  {
+    value: "cash",
+    label: "Cash",
+  },
+  {
+    value: "mobile",
+    label: "Mobile Money",
+  },
+  {
+    value: "bank",
+    label: "Bank",
+  },
+  {
+    value: "credit",
+    label: "Credit",
+  },
 ];
 
 const paymentTransactionMethods = [
-  { value: "cash", label: "Cash" },
-  { value: "mobile", label: "Mobile Money" },
-  { value: "bank", label: "Bank" },
+  {
+    value: "cash",
+    label: "Cash",
+  },
+  {
+    value: "mobile",
+    label: "Mobile Money",
+  },
+  {
+    value: "bank",
+    label: "Bank",
+  },
 ];
 
 const units = [
-  { value: "piece", label: "Piece" },
-  { value: "tray", label: "Tray" },
+  {
+    value: "piece",
+    label: "Piece",
+  },
+  {
+    value: "tray",
+    label: "Tray",
+  },
 ];
 
 const emptyItem = {
@@ -48,7 +83,11 @@ const createInitialForm = () => ({
   amount_paid: "",
   discount: "",
   notes: "",
-  items: [{ ...emptyItem }],
+  items: [
+    {
+      ...emptyItem,
+    },
+  ],
 });
 
 const createInitialPaymentForm = () => ({
@@ -59,23 +98,43 @@ const createInitialPaymentForm = () => ({
   notes: "",
 });
 
+/*
+ * ============================================================
+ * LIST RESPONSE
+ * ============================================================
+ */
+
 function getList(response) {
   if (Array.isArray(response?.data)) {
     return response.data;
   }
 
-  if (Array.isArray(response?.data?.results)) {
+  if (
+    Array.isArray(
+      response?.data?.results
+    )
+  ) {
     return response.data.results;
   }
 
   return [];
 }
 
+/*
+ * ============================================================
+ * ERROR
+ * ============================================================
+ */
+
 function extractError(error) {
-  const data = error?.response?.data;
+  const data =
+    error?.response?.data;
 
   if (!data) {
-    return error?.message || "Something went wrong.";
+    return (
+      error?.message ||
+      "Something went wrong."
+    );
   }
 
   if (typeof data === "string") {
@@ -86,62 +145,134 @@ function extractError(error) {
     return data.detail;
   }
 
-  if (data.message) {
-    return data.message;
-  }
-
-  if (typeof data === "object") {
+  if (
+    typeof data === "object"
+  ) {
     return Object.entries(data)
-      .map(([field, value]) => {
-        let message = value;
+      .map(
+        ([field, value]) => {
+          let message = value;
 
-        if (Array.isArray(value)) {
-          message = value.join(", ");
-        } else if (
-          typeof value === "object" &&
-          value !== null
-        ) {
-          message = JSON.stringify(value);
+          if (
+            Array.isArray(value)
+          ) {
+            message =
+              value.join(", ");
+          } else if (
+            typeof value ===
+              "object" &&
+            value !== null
+          ) {
+            message =
+              JSON.stringify(
+                value
+              );
+          }
+
+          return `${field}: ${message}`;
         }
-
-        return `${field}: ${message}`;
-      })
+      )
       .join(" | ");
   }
 
   return "Something went wrong.";
 }
 
+/*
+ * ============================================================
+ * NUMBER FORMATTING
+ * ============================================================
+ */
+
+function formatNumber(value) {
+  return Number(
+    value || 0
+  ).toLocaleString("en-TZ");
+}
+
+/*
+ * ============================================================
+ * MONEY FORMATTING
+ * ============================================================
+ */
+
 function formatMoney(value) {
-  return Number(value || 0).toLocaleString("en-TZ", {
+  return Number(
+    value || 0
+  ).toLocaleString("en-TZ", {
     maximumFractionDigits: 2,
   });
 }
 
-function calculateItemTotal(item) {
-  const quantity = Number(item.quantity || 0);
-  const unitPrice = Number(item.unit_price || 0);
+/*
+ * ============================================================
+ * ITEM TOTAL
+ * ============================================================
+ */
 
-  return quantity * unitPrice;
+function calculateItemTotal(item) {
+  const quantity = Number(
+    item.quantity || 0
+  );
+
+  const unitPrice = Number(
+    item.unit_price || 0
+  );
+
+  return (
+    quantity * unitPrice
+  );
 }
 
-function calculateEggQuantity(item) {
+/*
+ * ============================================================
+ * EGG QUANTITY
+ *
+ * If egg item:
+ *
+ * piece = quantity
+ * tray  = quantity * 30
+ * ============================================================
+ */
+
+function calculateEggQuantity(
+  item
+) {
   if (!item.is_egg) {
     return 0;
   }
 
-  const quantity = Number(item.quantity || 0);
+  const quantity = Number(
+    item.quantity || 0
+  );
 
   if (item.unit === "tray") {
-    return quantity * EGGS_PER_TRAY;
+    return (
+      quantity *
+      EGGS_PER_TRAY
+    );
   }
 
   return quantity;
 }
 
-function getPaymentStatus(total, amountPaid) {
-  const saleTotal = Number(total || 0);
-  const paid = Number(amountPaid || 0);
+/*
+ * ============================================================
+ * PAYMENT STATUS
+ * ============================================================
+ */
+
+function getPaymentStatus(
+  total,
+  amountPaid
+) {
+  const saleTotal = Number(
+    total || 0
+  );
+
+  const paid = Number(
+    amountPaid || 0
+  );
 
   if (saleTotal <= 0) {
     return "paid";
@@ -158,7 +289,9 @@ function getPaymentStatus(total, amountPaid) {
   return "partial";
 }
 
-function getPaymentStatusLabel(status) {
+function getPaymentStatusLabel(
+  status
+) {
   switch (status) {
     case "paid":
       return "Paid";
@@ -174,7 +307,9 @@ function getPaymentStatusLabel(status) {
   }
 }
 
-function getPaymentStatusClass(status) {
+function getPaymentStatusClass(
+  status
+) {
   switch (status) {
     case "paid":
       return "active";
@@ -190,261 +325,153 @@ function getPaymentStatusClass(status) {
   }
 }
 
-function getPaymentMethodLabel(value) {
-  const method = paymentMethods.find(
-    (item) => item.value === value
-  );
+function getPaymentMethodLabel(
+  value
+) {
+  const method =
+    paymentMethods.find(
+      (item) =>
+        item.value === value
+    );
 
-  return method?.label || value || "-";
+  return (
+    method?.label ||
+    value ||
+    "-"
+  );
 }
 
-function getTransactionPaymentMethodLabel(value) {
-  const method = paymentTransactionMethods.find(
-    (item) => item.value === value
-  );
+function getTransactionPaymentMethodLabel(
+  value
+) {
+  const method =
+    paymentTransactionMethods.find(
+      (item) =>
+        item.value === value
+    );
 
-  return method?.label || value || "-";
+  return (
+    method?.label ||
+    value ||
+    "-"
+  );
 }
 
 /*
  * ============================================================
- * EGG STOCK HELPERS
- * ============================================================
- *
- * The inventory API may return different field names depending
- * on your backend implementation.
- *
- * These helpers support common names.
+ * SALES COMPONENT
  * ============================================================
  */
 
-function getNumericField(object, fields) {
-  for (const field of fields) {
-    if (
-      object?.[field] !== undefined &&
-      object?.[field] !== null &&
-      object?.[field] !== ""
-    ) {
-      const value = Number(object[field]);
-
-      if (Number.isFinite(value)) {
-        return value;
-      }
-    }
-  }
-
-  return null;
-}
-
-function getAvailableEggStock(response) {
-  const data = response?.data;
-
-  /*
-   * Direct object response.
-   *
-   * Example:
-   * {
-   *   available_eggs: 500
-   * }
-   */
-
-  if (
-    data &&
-    typeof data === "object" &&
-    !Array.isArray(data)
-  ) {
-    const directStock = getNumericField(data, [
-      "available_eggs",
-      "egg_stock",
-      "current_stock",
-      "current_egg_stock",
-      "eggs_available",
-      "available_stock",
-      "closing_stock",
-      "balance",
-      "stock",
-    ]);
-
-    if (directStock !== null) {
-      return Math.max(0, directStock);
-    }
-
-    /*
-     * Sometimes API returns:
-     *
-     * {
-     *   data: {
-     *      available_eggs: 500
-     *   }
-     * }
-     */
-
-    if (
-      data.data &&
-      typeof data.data === "object" &&
-      !Array.isArray(data.data)
-    ) {
-      const nestedStock = getNumericField(
-        data.data,
-        [
-          "available_eggs",
-          "egg_stock",
-          "current_stock",
-          "current_egg_stock",
-          "eggs_available",
-          "available_stock",
-          "closing_stock",
-          "balance",
-          "stock",
-        ]
-      );
-
-      if (nestedStock !== null) {
-        return Math.max(0, nestedStock);
-      }
-    }
-  }
-
-  /*
-   * List response.
-   *
-   * We use the latest record that contains a stock
-   * field.
-   */
-
-  const records = getList(response);
-
-  if (!records.length) {
-    return 0;
-  }
-
-  /*
-   * Sort records by date/id where possible so that
-   * the latest inventory record is used.
-   */
-
-  const sortedRecords = [...records].sort(
-    (a, b) => {
-      const dateA = String(a?.date || "");
-      const dateB = String(b?.date || "");
-
-      if (dateA !== dateB) {
-        return dateB.localeCompare(dateA);
-      }
-
-      return Number(b?.id || 0) - Number(a?.id || 0);
-    }
-  );
-
-  for (const record of sortedRecords) {
-    const stock = getNumericField(record, [
-      "available_eggs",
-      "egg_stock",
-      "current_stock",
-      "current_egg_stock",
-      "eggs_available",
-      "available_stock",
-      "closing_stock",
-      "balance",
-      "stock",
-    ]);
-
-    if (stock !== null) {
-      return Math.max(0, stock);
-    }
-  }
-
-  /*
-   * If inventory records contain production and sold
-   * quantities instead of a direct stock field, calculate
-   * the stock from the latest record.
-   */
-
-  const latest = sortedRecords[0];
-
-  const openingStock = getNumericField(
-    latest,
-    [
-      "opening_stock",
-      "opening_eggs",
-    ]
-  );
-
-  const produced = getNumericField(
-    latest,
-    [
-      "eggs_collected",
-      "eggs_produced",
-      "produced_eggs",
-      "production",
-    ]
-  );
-
-  const sold = getNumericField(
-    latest,
-    [
-      "eggs_sold",
-      "sold_eggs",
-      "sales",
-    ]
-  );
-
-  if (
-    openingStock !== null ||
-    produced !== null ||
-    sold !== null
-  ) {
-    return Math.max(
-      0,
-      (openingStock || 0) +
-        (produced || 0) -
-        (sold || 0)
-    );
-  }
-
-  return 0;
-}
-
 export default function Sales() {
-  const [data, setData] = useState([]);
-  const [customers, setCustomers] = useState([]);
-
   /*
-   * ============================================================
-   * EGG INVENTORY STATE
-   * ============================================================
+   * ==========================================================
+   * SALES
+   * ==========================================================
    */
 
-  const [eggStock, setEggStock] = useState(0);
+  const [data, setData] =
+    useState([]);
 
-  const [loadingEggStock, setLoadingEggStock] =
-    useState(true);
+  /*
+   * ==========================================================
+   * CUSTOMERS
+   * ==========================================================
+   */
 
-  const [eggStockError, setEggStockError] =
-    useState("");
+  const [customers, setCustomers] =
+    useState([]);
 
-  const [form, setForm] = useState(
-    createInitialForm()
-  );
+  /*
+   * ==========================================================
+   * SALE FORM
+   * ==========================================================
+   */
 
-  const [paymentForm, setPaymentForm] =
+  const [form, setForm] =
     useState(
-      createInitialPaymentForm()
+      createInitialForm()
     );
 
-  const [editingId, setEditingId] =
-    useState(null);
+  /*
+   * ==========================================================
+   * PAYMENT FORM
+   * ==========================================================
+   */
 
-  const [paymentSale, setPaymentSale] =
-    useState(null);
+  const [
+    paymentForm,
+    setPaymentForm,
+  ] = useState(
+    createInitialPaymentForm()
+  );
+
+  /*
+   * ==========================================================
+   * EGG INVENTORY
+   *
+   * This is the important addition.
+   * ==========================================================
+   */
+
+  const [
+    eggInventory,
+    setEggInventory,
+  ] = useState({
+    current_stock: 0,
+    available_eggs: 0,
+    total_collected: 0,
+    total_sold: 0,
+  });
+
+  const [
+    loadingEggInventory,
+    setLoadingEggInventory,
+  ] = useState(false);
+
+  /*
+   * ==========================================================
+   * EDITING
+   * ==========================================================
+   */
+
+  const [
+    editingId,
+    setEditingId,
+  ] = useState(null);
+
+  /*
+   * ==========================================================
+   * PAYMENT MODAL
+   * ==========================================================
+   */
+
+  const [
+    paymentSale,
+    setPaymentSale,
+  ] = useState(null);
+
+  /*
+   * ==========================================================
+   * PAYMENT HISTORY
+   * ==========================================================
+   */
 
   const [
     paymentHistorySale,
     setPaymentHistorySale,
   ] = useState(null);
 
-  const [paymentHistory, setPaymentHistory] =
-    useState([]);
+  const [
+    paymentHistory,
+    setPaymentHistory,
+  ] = useState([]);
+
+  /*
+   * ==========================================================
+   * LOADING
+   * ==========================================================
+   */
 
   const [loading, setLoading] =
     useState(true);
@@ -459,6 +486,12 @@ export default function Sales() {
     setLoadingPaymentHistory,
   ] = useState(false);
 
+  /*
+   * ==========================================================
+   * SAVING
+   * ==========================================================
+   */
+
   const [saving, setSaving] =
     useState(false);
 
@@ -467,8 +500,22 @@ export default function Sales() {
     setSavingPayment,
   ] = useState(false);
 
-  const [deletingId, setDeletingId] =
-    useState(null);
+  /*
+   * ==========================================================
+   * DELETE
+   * ==========================================================
+   */
+
+  const [
+    deletingId,
+    setDeletingId,
+  ] = useState(null);
+
+  /*
+   * ==========================================================
+   * MESSAGES
+   * ==========================================================
+   */
 
   const [error, setError] =
     useState("");
@@ -476,13 +523,25 @@ export default function Sales() {
   const [success, setSuccess] =
     useState("");
 
+  /*
+   * ==========================================================
+   * SEARCH
+   * ==========================================================
+   */
+
   const [search, setSearch] =
     useState("");
+
+  /*
+   * ==========================================================
+   * INITIAL LOAD
+   * ==========================================================
+   */
 
   useEffect(() => {
     loadSales();
     loadCustomers();
-    loadEggStock();
+    loadEggInventory();
   }, []);
 
   /*
@@ -496,15 +555,20 @@ export default function Sales() {
 
     try {
       const response =
-        await api.get("/sales/");
+        await api.get(
+          "/sales/"
+        );
 
-      const sales = getList(response);
+      const sales =
+        getList(response);
 
       setData(sales);
 
       return sales;
     } catch (err) {
-      setError(extractError(err));
+      setError(
+        extractError(err)
+      );
 
       return [];
     } finally {
@@ -518,67 +582,110 @@ export default function Sales() {
    * ============================================================
    */
 
-  const loadCustomers = async () => {
-    setLoadingCustomers(true);
-
-    try {
-      const response =
-        await api.get("/customers/");
-
-      setCustomers(
-        getList(response)
+  const loadCustomers =
+    async () => {
+      setLoadingCustomers(
+        true
       );
-    } catch (err) {
-      setError(extractError(err));
-    } finally {
-      setLoadingCustomers(false);
-    }
-  };
+
+      try {
+        const response =
+          await api.get(
+            "/customers/"
+          );
+
+        setCustomers(
+          getList(response)
+        );
+      } catch (err) {
+        setError(
+          extractError(err)
+        );
+      } finally {
+        setLoadingCustomers(
+          false
+        );
+      }
+    };
 
   /*
    * ============================================================
-   * LOAD EGG STOCK
+   * LOAD EGG INVENTORY
+   *
+   * GET /api/egg-inventory/
+   *
+   * Always retrieves the latest stock from backend.
    * ============================================================
    */
 
-  const loadEggStock = async () => {
-    setLoadingEggStock(true);
-    setEggStockError("");
-
-    try {
-      const response =
-        await api.get("/egg-inventory/");
-
-      console.log(
-        "EGG INVENTORY RESPONSE:",
-        response.data
+  const loadEggInventory =
+    async () => {
+      setLoadingEggInventory(
+        true
       );
 
-      const availableStock =
-        getAvailableEggStock(response);
+      try {
+        const response =
+          await api.get(
+            "/egg-inventory/"
+          );
 
-      setEggStock(
-        Math.max(0, Number(availableStock || 0))
-      );
-    } catch (err) {
-      console.error(
-        "EGG INVENTORY ERROR:",
-        err.response?.data || err
-      );
+        const inventory =
+          response.data || {};
 
-      setEggStock(0);
+        const currentStock =
+          Number(
+            inventory.current_stock ??
+              inventory.available_eggs ??
+              0
+          );
 
-      setEggStockError(
-        extractError(err)
-      );
-    } finally {
-      setLoadingEggStock(false);
-    }
-  };
+        const normalizedInventory =
+          {
+            current_stock:
+              currentStock,
+
+            available_eggs:
+              currentStock,
+
+            total_collected:
+              Number(
+                inventory.total_collected ||
+                  0
+              ),
+
+            total_sold:
+              Number(
+                inventory.total_sold ||
+                  0
+              ),
+          };
+
+        setEggInventory(
+          normalizedInventory
+        );
+
+        return currentStock;
+      } catch (err) {
+        console.error(
+          "Failed to load egg inventory:",
+          err.response?.data ||
+            err
+        );
+
+        throw new Error(
+          "Unable to check egg inventory. Please try again."
+        );
+      } finally {
+        setLoadingEggInventory(
+          false
+        );
+      }
+    };
 
   /*
    * ============================================================
-   * RESET SALE FORM
+   * RESET FORM
    * ============================================================
    */
 
@@ -593,11 +700,13 @@ export default function Sales() {
 
   /*
    * ============================================================
-   * SUCCESS MESSAGE
+   * SUCCESS
    * ============================================================
    */
 
-  const showSuccess = (message) => {
+  const showSuccess = (
+    message
+  ) => {
     setSuccess(message);
 
     setTimeout(() => {
@@ -607,23 +716,26 @@ export default function Sales() {
 
   /*
    * ============================================================
-   * MAIN FORM CHANGE
+   * FORM CHANGE
    * ============================================================
    */
 
-  const handleFormChange = (e) => {
-    const {
-      name,
-      value,
-    } = e.target;
+  const handleFormChange =
+    (e) => {
+      const {
+        name,
+        value,
+      } = e.target;
 
-    setForm((current) => ({
-      ...current,
-      [name]: value,
-    }));
+      setForm(
+        (current) => ({
+          ...current,
+          [name]: value,
+        })
+      );
 
-    setError("");
-  };
+      setError("");
+    };
 
   /*
    * ============================================================
@@ -631,36 +743,42 @@ export default function Sales() {
    * ============================================================
    */
 
-  const handlePaymentMethodChange = (
-    e
-  ) => {
-    const value =
-      e.target.value;
+  const handlePaymentMethodChange =
+    (e) => {
+      const value =
+        e.target.value;
 
-    setForm((current) => {
-      let amountPaid =
-        current.amount_paid;
+      setForm(
+        (current) => {
+          let amountPaid =
+            current.amount_paid;
 
-      if (value === "credit") {
-        amountPaid = "0";
-      }
+          if (
+            value === "credit"
+          ) {
+            amountPaid = "0";
+          }
 
-      if (
-        value !== "credit" &&
-        current.amount_paid === "0"
-      ) {
-        amountPaid = "";
-      }
+          if (
+            value !== "credit" &&
+            current.amount_paid ===
+              "0"
+          ) {
+            amountPaid = "";
+          }
 
-      return {
-        ...current,
-        payment_method: value,
-        amount_paid: amountPaid,
-      };
-    });
+          return {
+            ...current,
+            payment_method:
+              value,
+            amount_paid:
+              amountPaid,
+          };
+        }
+      );
 
-    setError("");
-  };
+      setError("");
+    };
 
   /*
    * ============================================================
@@ -668,29 +786,32 @@ export default function Sales() {
    * ============================================================
    */
 
-  const handleItemChange = (
-    index,
-    field,
-    value
-  ) => {
-    setForm((current) => {
-      const items = [
-        ...current.items,
-      ];
+  const handleItemChange =
+    (
+      index,
+      field,
+      value
+    ) => {
+      setForm(
+        (current) => {
+          const items = [
+            ...current.items,
+          ];
 
-      items[index] = {
-        ...items[index],
-        [field]: value,
-      };
+          items[index] = {
+            ...items[index],
+            [field]: value,
+          };
 
-      return {
-        ...current,
-        items,
-      };
-    });
+          return {
+            ...current,
+            items,
+          };
+        }
+      );
 
-    setError("");
-  };
+      setError("");
+    };
 
   /*
    * ============================================================
@@ -699,15 +820,17 @@ export default function Sales() {
    */
 
   const addItem = () => {
-    setForm((current) => ({
-      ...current,
-      items: [
-        ...current.items,
-        {
-          ...emptyItem,
-        },
-      ],
-    }));
+    setForm(
+      (current) => ({
+        ...current,
+        items: [
+          ...current.items,
+          {
+            ...emptyItem,
+          },
+        ],
+      })
+    );
   };
 
   /*
@@ -716,23 +839,32 @@ export default function Sales() {
    * ============================================================
    */
 
-  const removeItem = (index) => {
-    setForm((current) => {
-      if (
-        current.items.length === 1
-      ) {
-        return current;
-      }
+  const removeItem = (
+    index
+  ) => {
+    setForm(
+      (current) => {
+        if (
+          current.items.length ===
+          1
+        ) {
+          return current;
+        }
 
-      return {
-        ...current,
-        items:
-          current.items.filter(
-            (_, itemIndex) =>
-              itemIndex !== index
-          ),
-      };
-    });
+        return {
+          ...current,
+          items:
+            current.items.filter(
+              (
+                _,
+                itemIndex
+              ) =>
+                itemIndex !==
+                index
+            ),
+        };
+      }
+    );
   };
 
   /*
@@ -741,25 +873,34 @@ export default function Sales() {
    * ============================================================
    */
 
-  const subtotal = useMemo(() => {
-    return form.items.reduce(
-      (sum, item) =>
-        sum +
-        calculateItemTotal(item),
-      0
-    );
-  }, [form.items]);
+  const subtotal =
+    useMemo(() => {
+      return form.items.reduce(
+        (
+          sum,
+          item
+        ) =>
+          sum +
+          calculateItemTotal(
+            item
+          ),
+        0
+      );
+    }, [form.items]);
 
   /*
    * ============================================================
-   * TOTAL EGGS IN CURRENT SALE
+   * TOTAL EGGS IN CURRENT FORM
    * ============================================================
    */
 
   const totalEggsInForm =
     useMemo(() => {
       return form.items.reduce(
-        (sum, item) =>
+        (
+          sum,
+          item
+        ) =>
           sum +
           calculateEggQuantity(
             item
@@ -770,27 +911,32 @@ export default function Sales() {
 
   /*
    * ============================================================
-   * AVAILABLE STOCK AFTER THIS SALE
+   * REMAINING STOCK AFTER THIS SALE
    * ============================================================
    */
 
   const remainingEggStock =
     Math.max(
       0,
-      Number(eggStock || 0) -
-        Number(
-          totalEggsInForm || 0
-        )
+      Number(
+        eggInventory.current_stock ||
+          0
+      ) -
+        totalEggsInForm
     );
 
   /*
    * ============================================================
-   * STOCK IS ENOUGH?
+   * STOCK INSUFFICIENT
    * ============================================================
    */
 
-  const hasEnoughEggStock =
-    totalEggsInForm <= eggStock;
+  const insufficientEggStock =
+    totalEggsInForm >
+    Number(
+      eggInventory.current_stock ||
+        0
+    );
 
   /*
    * ============================================================
@@ -819,12 +965,14 @@ export default function Sales() {
    * ============================================================
    */
 
-  const amountPaid = Math.max(
-    0,
-    Number(
-      form.amount_paid || 0
-    )
-  );
+  const amountPaid =
+    Math.max(
+      0,
+      Number(
+        form.amount_paid ||
+          0
+      )
+    );
 
   /*
    * ============================================================
@@ -832,10 +980,11 @@ export default function Sales() {
    * ============================================================
    */
 
-  const balance = Math.max(
-    0,
-    total - amountPaid
-  );
+  const balance =
+    Math.max(
+      0,
+      total - amountPaid
+    );
 
   /*
    * ============================================================
@@ -851,7 +1000,7 @@ export default function Sales() {
 
   /*
    * ============================================================
-   * VALIDATE SALE FORM
+   * VALIDATE SALE
    * ============================================================
    */
 
@@ -873,36 +1022,8 @@ export default function Sales() {
     }
 
     /*
-     * ========================================================
-     * IMPORTANT STOCK CHECK
-     * ========================================================
-     */
-
-    if (totalEggsInForm > 0) {
-      if (loadingEggStock) {
-        return "Please wait while egg stock is being checked.";
-      }
-
-      if (eggStockError) {
-        return `Cannot verify egg stock. ${eggStockError}`;
-      }
-
-      if (totalEggsInForm > eggStock) {
-        return (
-          `Sale cancelled. Insufficient egg stock. ` +
-          `Available: ${formatMoney(
-            eggStock
-          )} eggs. ` +
-          `Requested: ${formatMoney(
-            totalEggsInForm
-          )} eggs.`
-        );
-      }
-    }
-
-    /*
-     * Amount paid is only relevant when
-     * creating a new sale.
+     * Amount paid is only relevant
+     * when creating a new sale.
      */
 
     if (!editingId) {
@@ -932,9 +1053,12 @@ export default function Sales() {
       }
 
       if (
-        item.quantity === "" ||
-        item.quantity === null ||
-        Number(item.quantity) <= 0
+        item.quantity ===
+          "" ||
+        item.quantity ===
+          null ||
+        Number(item.quantity) <=
+          0
       ) {
         return `Quantity must be greater than 0 for item ${
           i + 1
@@ -942,9 +1066,13 @@ export default function Sales() {
       }
 
       if (
-        item.unit_price === "" ||
-        item.unit_price === null ||
-        Number(item.unit_price) < 0
+        item.unit_price ===
+          "" ||
+        item.unit_price ===
+          null ||
+        Number(
+          item.unit_price
+        ) < 0
       ) {
         return `Unit price is required for item ${
           i + 1
@@ -963,9 +1091,12 @@ export default function Sales() {
       }
 
       if (
-        item.unit === "tray" &&
+        item.unit ===
+          "tray" &&
         !Number.isInteger(
-          Number(item.quantity)
+          Number(
+            item.quantity
+          )
         )
       ) {
         return `Tray quantity must be a whole number for item ${
@@ -979,184 +1110,178 @@ export default function Sales() {
 
   /*
    * ============================================================
+   * VALIDATE EGG STOCK
+   *
+   * Always reloads inventory immediately before saving.
+   * ============================================================
+   */
+
+  const validateEggStock =
+    async () => {
+      /*
+       * No egg items in this sale.
+       */
+
+      if (
+        totalEggsInForm <= 0
+      ) {
+        return "";
+      }
+
+      try {
+        /*
+         * IMPORTANT:
+         *
+         * Fetch latest inventory.
+         * Do not rely only on the stock loaded
+         * when the page opened.
+         */
+
+        const currentStock =
+          await loadEggInventory();
+
+        if (
+          totalEggsInForm >
+          currentStock
+        ) {
+          return `Insufficient egg stock. Available: ${formatNumber(
+            currentStock
+          )} eggs, but this sale requires ${formatNumber(
+            totalEggsInForm
+          )} eggs.`;
+        }
+
+        return "";
+      } catch (err) {
+        return (
+          err.message ||
+          "Unable to verify egg inventory."
+        );
+      }
+    };
+
+  /*
+   * ============================================================
    * SAVE / UPDATE SALE
    * ============================================================
    */
 
-  const save = async (e) => {
+  const save = async (
+    e
+  ) => {
     e.preventDefault();
 
     setError("");
     setSuccess("");
 
     /*
-     * Always refresh stock immediately before saving
-     * an egg sale.
-     *
-     * This prevents using an old stock value.
+     * NORMAL FORM VALIDATION
      */
 
-    if (totalEggsInForm > 0) {
-      setSaving(true);
+    const validationError =
+      validateForm();
 
-      try {
-        const stockResponse =
-          await api.get(
-            "/egg-inventory/"
-          );
-
-        const latestStock =
-          getAvailableEggStock(
-            stockResponse
-          );
-
-        setEggStock(
-          Math.max(
-            0,
-            Number(
-              latestStock || 0
-            )
-          )
-        );
-
-        /*
-         * Check the freshly loaded stock.
-         */
-
-        if (
-          totalEggsInForm >
-          Number(latestStock || 0)
-        ) {
-          setError(
-            `Sale cancelled. Insufficient egg stock. ` +
-              `Available: ${formatMoney(
-                latestStock
-              )} eggs. ` +
-              `Requested: ${formatMoney(
-                totalEggsInForm
-              )} eggs.`
-          );
-
-          setSaving(false);
-          return;
-        }
-      } catch (err) {
-        setError(
-          `Sale cancelled because egg stock could not be verified. ${extractError(
-            err
-          )}`
-        );
-
-        setSaving(false);
-        return;
-      }
-
-      /*
-       * Continue below after fresh stock check.
-       */
-
-      await saveSaleRequest();
+    if (validationError) {
+      setError(
+        validationError
+      );
       return;
     }
 
     /*
-     * Non-egg sale.
+     * ========================================================
+     * EGG INVENTORY CHECK
+     *
+     * This happens BEFORE POST/PATCH /sales/
+     * ========================================================
      */
+
+    const eggStockError =
+      await validateEggStock();
+
+    if (eggStockError) {
+      setError(
+        eggStockError
+      );
+      return;
+    }
 
     setSaving(true);
 
-    await saveSaleRequest();
-  };
+    /*
+     * ========================================================
+     * PAYLOAD
+     * ========================================================
+     */
 
-  /*
-   * ============================================================
-   * ACTUAL SALE REQUEST
-   * ============================================================
-   */
+    const payload = {
+      date: form.date,
 
-  const saveSaleRequest = async () => {
-    try {
-      const validationError =
-        validateForm();
+      customer: form.customer
+        ? Number(form.customer)
+        : null,
 
-      if (validationError) {
-        setError(
-          validationError
-        );
-        return;
-      }
+      payment_method:
+        form.payment_method,
 
-      /*
-       * IMPORTANT:
-       *
-       * amount_paid is intentionally NOT
-       * included when editing.
-       */
+      discount: Number(
+        discount.toFixed(2)
+      ),
 
-      const payload = {
-        date: form.date,
+      notes:
+        form.notes?.trim() ||
+        "",
 
-        customer: form.customer
-          ? Number(form.customer)
-          : null,
+      items:
+        form.items.map(
+          (item) => ({
+            product:
+              item.product.trim(),
 
-        payment_method:
-          form.payment_method,
+            is_egg:
+              Boolean(
+                item.is_egg
+              ),
 
-        discount: Number(
-          discount.toFixed(2)
+            quantity:
+              Number(
+                item.quantity
+              ),
+
+            unit:
+              item.unit ||
+              "piece",
+
+            unit_price:
+              Number(
+                item.unit_price
+              ),
+          })
         ),
+    };
 
-        notes:
-          form.notes?.trim() ||
-          "",
+    /*
+     * Initial payment only when creating.
+     */
 
-        items:
-          form.items.map(
-            (item) => ({
-              id: item.id,
+    if (!editingId) {
+      payload.amount_paid =
+        Number(
+          amountPaid.toFixed(2)
+        );
+    }
 
-              product:
-                item.product.trim(),
+    console.log(
+      "SALE PAYLOAD:",
+      payload
+    );
 
-              is_egg:
-                Boolean(
-                  item.is_egg
-                ),
-
-              quantity:
-                Number(
-                  item.quantity
-                ),
-
-              unit:
-                item.unit ||
-                "piece",
-
-              unit_price:
-                Number(
-                  item.unit_price
-                ),
-            })
-          ),
-      };
-
+    try {
       /*
-       * Initial payment is only sent
-       * when creating a new sale.
+       * ======================================================
+       * UPDATE SALE
+       * ======================================================
        */
-
-      if (!editingId) {
-        payload.amount_paid =
-          Number(
-            amountPaid.toFixed(2)
-          );
-      }
-
-      console.log(
-        "SALE PAYLOAD:",
-        payload
-      );
 
       if (editingId) {
         const response =
@@ -1174,7 +1299,15 @@ export default function Sales() {
             form.invoice_no
           } updated successfully.`
         );
-      } else {
+      }
+
+      /*
+       * ======================================================
+       * CREATE SALE
+       * ======================================================
+       */
+
+      else {
         const response =
           await api.post(
             "/sales/",
@@ -1194,13 +1327,22 @@ export default function Sales() {
       }
 
       /*
-       * Refresh both sales and egg stock.
+       * Reload sales.
        */
 
-      await Promise.all([
-        loadSales(),
-        loadEggStock(),
-      ]);
+      await loadSales();
+
+      /*
+       * Reload inventory.
+       *
+       * This should now show the deducted stock.
+       */
+
+      await loadEggInventory();
+
+      /*
+       * Reset form.
+       */
 
       setEditingId(null);
 
@@ -1216,6 +1358,17 @@ export default function Sales() {
       setError(
         extractError(err)
       );
+
+      /*
+       * Reload inventory in case
+       * backend rejected or changed it.
+       */
+
+      try {
+        await loadEggInventory();
+      } catch {
+        // Ignore inventory refresh error here.
+      }
     } finally {
       setSaving(false);
     }
@@ -1227,7 +1380,9 @@ export default function Sales() {
    * ============================================================
    */
 
-  const editSale = (sale) => {
+  const editSale = (
+    sale
+  ) => {
     setError("");
     setSuccess("");
 
@@ -1237,7 +1392,8 @@ export default function Sales() {
 
     const existingAmountPaid =
       Number(
-        sale.amount_paid || 0
+        sale.amount_paid ||
+          0
       );
 
     setForm({
@@ -1308,6 +1464,18 @@ export default function Sales() {
             ],
     });
 
+    /*
+     * Refresh stock when editing.
+     */
+
+    loadEggInventory().catch(
+      (err) => {
+        console.error(
+          err
+        );
+      }
+    );
+
     window.scrollTo({
       top: 0,
       behavior: "smooth",
@@ -1341,16 +1509,25 @@ export default function Sales() {
         `/sales/${id}/`
       );
 
-      await Promise.all([
-        loadSales(),
-        loadEggStock(),
-      ]);
+      await loadSales();
+
+      /*
+       * Important:
+       *
+       * If backend restores eggs when
+       * an egg sale is deleted, this will
+       * immediately show the new stock.
+       */
+
+      await loadEggInventory();
 
       showSuccess(
         "Sale deleted successfully."
       );
 
-      if (editingId === id) {
+      if (
+        editingId === id
+      ) {
         resetForm();
       }
     } catch (err) {
@@ -1483,7 +1660,7 @@ export default function Sales() {
 
   /*
    * ============================================================
-   * OPEN RECEIVE PAYMENT
+   * OPEN PAYMENT MODAL
    * ============================================================
    */
 
@@ -1504,7 +1681,7 @@ export default function Sales() {
 
   /*
    * ============================================================
-   * CLOSE RECEIVE PAYMENT
+   * CLOSE PAYMENT MODAL
    * ============================================================
    */
 
@@ -1561,7 +1738,8 @@ export default function Sales() {
 
     const amount =
       Number(
-        paymentForm.amount || 0
+        paymentForm.amount ||
+          0
       );
 
     if (amount <= 0) {
@@ -1573,7 +1751,10 @@ export default function Sales() {
         paymentSale
       );
 
-    if (amount > outstanding) {
+    if (
+      amount >
+      outstanding
+    ) {
       return `Payment cannot be greater than the outstanding balance of TZS ${formatMoney(
         outstanding
       )}.`;
@@ -1600,85 +1781,94 @@ export default function Sales() {
    * ============================================================
    */
 
-  const savePayment = async (
-    e
-  ) => {
-    e.preventDefault();
+  const savePayment =
+    async (e) => {
+      e.preventDefault();
 
-    setError("");
+      setError("");
 
-    const validationError =
-      validatePayment();
+      const validationError =
+        validatePayment();
 
-    if (validationError) {
-      setError(
-        validationError
-      );
-      return;
-    }
+      if (validationError) {
+        setError(
+          validationError
+        );
+        return;
+      }
 
-    setSavingPayment(true);
-
-    try {
-      const payload = {
-        sale: paymentSale.id,
-
-        date:
-          paymentForm.date,
-
-        amount: Number(
-          Number(
-            paymentForm.amount
-          ).toFixed(2)
-        ),
-
-        payment_method:
-          paymentForm.payment_method,
-
-        reference:
-          paymentForm.reference?.trim() ||
-          "",
-
-        notes:
-          paymentForm.notes?.trim() ||
-          "",
-      };
-
-      await api.post(
-        "/sale-payments/",
-        payload
+      setSavingPayment(
+        true
       );
 
-      showSuccess(
-        `Payment of TZS ${formatMoney(
-          payload.amount
-        )} received successfully.`
-      );
+      try {
+        const payload = {
+          sale:
+            paymentSale.id,
 
-      setPaymentSale(null);
+          date:
+            paymentForm.date,
 
-      setPaymentForm(
-        createInitialPaymentForm()
-      );
+          amount: Number(
+            Number(
+              paymentForm.amount
+            ).toFixed(2)
+          ),
 
-      await loadSales();
-    } catch (err) {
-      console.error(
-        "PAYMENT ERROR:",
-        err.response?.data
-      );
+          payment_method:
+            paymentForm.payment_method,
 
-      setError(
-        extractError(err)
-      );
-    } finally {
-      setSavingPayment(false);
-    }
-  };
+          reference:
+            paymentForm.reference?.trim() ||
+            "",
+
+          notes:
+            paymentForm.notes?.trim() ||
+            "",
+        };
+
+        console.log(
+          "PAYMENT PAYLOAD:",
+          payload
+        );
+
+        await api.post(
+          "/sale-payments/",
+          payload
+        );
+
+        showSuccess(
+          `Payment of TZS ${formatMoney(
+            payload.amount
+          )} received successfully.`
+        );
+
+        setPaymentSale(null);
+
+        setPaymentForm(
+          createInitialPaymentForm()
+        );
+
+        await loadSales();
+      } catch (err) {
+        console.error(
+          "PAYMENT ERROR:",
+          err.response?.data
+        );
+
+        setError(
+          extractError(err)
+        );
+      } finally {
+        setSavingPayment(
+          false
+        );
+      }
+    };
 
   /*
    * ============================================================
-   * LOAD PAYMENT HISTORY
+   * PAYMENT HISTORY
    * ============================================================
    */
 
@@ -1762,7 +1952,9 @@ export default function Sales() {
             );
 
           const itemNames =
-            (sale.items || [])
+            (
+              sale.items || []
+            )
               .map(
                 (item) =>
                   item.product
@@ -1822,7 +2014,10 @@ export default function Sales() {
   const totalSales =
     useMemo(() => {
       return data.reduce(
-        (sum, sale) =>
+        (
+          sum,
+          sale
+        ) =>
           sum +
           Number(
             sale.total || 0
@@ -1840,9 +2035,14 @@ export default function Sales() {
   const totalPaid =
     useMemo(() => {
       return data.reduce(
-        (sum, sale) =>
+        (
+          sum,
+          sale
+        ) =>
           sum +
-          getSalePaid(sale),
+          getSalePaid(
+            sale
+          ),
         0
       );
     }, [data]);
@@ -1856,7 +2056,10 @@ export default function Sales() {
   const totalOutstanding =
     useMemo(() => {
       return data.reduce(
-        (sum, sale) =>
+        (
+          sum,
+          sale
+        ) =>
           sum +
           getSaleBalance(
             sale
@@ -1880,7 +2083,10 @@ export default function Sales() {
             "credit"
         )
         .reduce(
-          (sum, sale) =>
+          (
+            sum,
+            sale
+          ) =>
             sum +
             getSaleBalance(
               sale
@@ -1889,6 +2095,12 @@ export default function Sales() {
         );
     }, [data]);
 
+  /*
+   * ============================================================
+   * RENDER
+   * ============================================================
+   */
+
   return (
     <>
       <PageHeader
@@ -1896,9 +2108,51 @@ export default function Sales() {
         subtitle="Manage egg, chicken and other farm sales."
       />
 
-      {/* =========================================================
+      {/* =======================================================
+          EGG INVENTORY STATUS
+      ======================================================== */}
+
+      <div
+        className={`alert ${
+          insufficientEggStock &&
+          totalEggsInForm > 0
+            ? "alert-danger"
+            : "alert-success"
+        } d-flex justify-content-between align-items-center mb-4`}
+      >
+        <div>
+          <div className="fw-semibold">
+            <i className="bi bi-egg-fill me-2"></i>
+            Available Egg Stock
+          </div>
+
+          <small className="text-muted">
+            Current usable eggs available for sale.
+          </small>
+        </div>
+
+        <div className="text-end">
+          {loadingEggInventory ? (
+            <>
+              <span className="spinner-border spinner-border-sm text-success me-2"></span>
+              <span className="text-muted">
+                Checking stock...
+              </span>
+            </>
+          ) : (
+            <strong className="fs-5 text-success">
+              {formatNumber(
+                eggInventory.current_stock
+              )}{" "}
+              eggs
+            </strong>
+          )}
+        </div>
+      </div>
+
+      {/* =======================================================
           ERROR
-      ========================================================== */}
+      ======================================================== */}
 
       {error && (
         <div className="alert alert-danger alert-dismissible fade show">
@@ -1916,9 +2170,9 @@ export default function Sales() {
         </div>
       )}
 
-      {/* =========================================================
+      {/* =======================================================
           SUCCESS
-      ========================================================== */}
+      ======================================================== */}
 
       {success && (
         <div className="alert alert-success alert-dismissible fade show">
@@ -1936,68 +2190,11 @@ export default function Sales() {
         </div>
       )}
 
-      {/* =========================================================
-          EGG STOCK CARD
-      ========================================================== */}
+      {/* =======================================================
+          SUMMARY
+      ======================================================== */}
 
       <div className="row g-3 mb-4">
-
-        <div className="col-md-3">
-          <div
-            className={`form-card h-100 ${
-              totalEggsInForm > eggStock &&
-              totalEggsInForm > 0
-                ? "border border-danger"
-                : ""
-            }`}
-          >
-            <small className="text-muted">
-              Available Egg Stock
-            </small>
-
-            {loadingEggStock ? (
-              <div className="mt-2">
-                <span className="spinner-border spinner-border-sm text-success me-2"></span>
-                Checking stock...
-              </div>
-            ) : eggStockError ? (
-              <div className="text-danger mt-2">
-                <i className="bi bi-exclamation-triangle me-1"></i>
-                Unable to check
-              </div>
-            ) : (
-              <>
-                <h4 className="mb-0 mt-1 text-success">
-                  {formatMoney(
-                    eggStock
-                  )}{" "}
-                  eggs
-                </h4>
-
-                {totalEggsInForm >
-                  0 && (
-                  <small
-                    className={
-                      hasEnoughEggStock
-                        ? "text-success"
-                        : "text-danger"
-                    }
-                  >
-                    {hasEnoughEggStock
-                      ? `${formatMoney(
-                          remainingEggStock
-                        )} eggs remaining after this sale`
-                      : `Insufficient stock — ${formatMoney(
-                          totalEggsInForm -
-                            eggStock
-                        )} eggs short`}
-                  </small>
-                )}
-              </>
-            )}
-          </div>
-        </div>
-
         <div className="col-md-3">
           <div className="form-card h-100">
             <small className="text-muted">
@@ -2043,16 +2240,28 @@ export default function Sales() {
           </div>
         </div>
 
+        <div className="col-md-3">
+          <div className="form-card h-100">
+            <small className="text-muted">
+              Credit Outstanding
+            </small>
+
+            <h4 className="mb-0 mt-1">
+              TZS{" "}
+              {formatMoney(
+                totalCredit
+              )}
+            </h4>
+          </div>
+        </div>
       </div>
 
-      {/* =========================================================
+      {/* =======================================================
           SALE FORM
-      ========================================================== */}
+      ======================================================== */}
 
       <div className="form-card mb-4">
-
         <div className="d-flex justify-content-between align-items-center mb-3">
-
           <div>
             <h5 className="mb-1">
               {editingId
@@ -2089,17 +2298,13 @@ export default function Sales() {
               Cancel Edit
             </button>
           )}
-
         </div>
 
         <form onSubmit={save}>
-
           <div className="row g-3">
-
             {/* DATE */}
 
             <div className="col-md-3">
-
               <label className="form-label">
                 Date
               </label>
@@ -2117,13 +2322,11 @@ export default function Sales() {
                 required
                 disabled={saving}
               />
-
             </div>
 
             {/* INVOICE */}
 
             <div className="col-md-3">
-
               <label className="form-label">
                 Invoice No.
               </label>
@@ -2144,13 +2347,11 @@ export default function Sales() {
                   ? "Existing invoice number"
                   : "Automatically generated by the server"}
               </small>
-
             </div>
 
             {/* CUSTOMER */}
 
             <div className="col-md-3">
-
               <label className="form-label">
                 Customer
               </label>
@@ -2168,7 +2369,6 @@ export default function Sales() {
                   saving
                 }
               >
-
                 <option value="">
                   Walk-in Customer
                 </option>
@@ -2179,7 +2379,9 @@ export default function Sales() {
                   </option>
                 ) : (
                   customers.map(
-                    (customer) => (
+                    (
+                      customer
+                    ) => (
                       <option
                         key={
                           customer.id
@@ -2195,15 +2397,12 @@ export default function Sales() {
                     )
                   )
                 )}
-
               </select>
-
             </div>
 
             {/* PAYMENT METHOD */}
 
             <div className="col-md-3">
-
               <label className="form-label">
                 Payment Method
               </label>
@@ -2221,9 +2420,10 @@ export default function Sales() {
                   saving
                 }
               >
-
                 {paymentMethods.map(
-                  (method) => (
+                  (
+                    method
+                  ) => (
                     <option
                       key={
                         method.value
@@ -2238,27 +2438,23 @@ export default function Sales() {
                     </option>
                   )
                 )}
-
               </select>
-
             </div>
 
-            {/* SALE ITEMS */}
+            {/* =================================================
+                SALE ITEMS
+            ================================================== */}
 
             <div className="col-12">
-
               <div className="d-flex justify-content-between align-items-center mb-2">
-
                 <div>
-
                   <h6 className="mb-0">
                     Sale Items
                   </h6>
 
                   <small className="text-muted">
-                    Mark an item as Egg so its quantity is checked against available egg stock.
+                    Mark egg items as "Yes" so their quantity is checked against egg inventory.
                   </small>
-
                 </div>
 
                 <button
@@ -2274,17 +2470,12 @@ export default function Sales() {
                   <i className="bi bi-plus-lg me-1"></i>
                   Add Item
                 </button>
-
               </div>
 
               <div className="table-responsive">
-
                 <table className="table table-bordered align-middle mb-0">
-
                   <thead>
-
                     <tr>
-
                       <th>
                         Product
                       </th>
@@ -2334,19 +2525,15 @@ export default function Sales() {
                           width: "60px",
                         }}
                       />
-
                     </tr>
-
                   </thead>
 
                   <tbody>
-
                     {form.items.map(
                       (
                         item,
                         index
                       ) => {
-
                         const itemTotal =
                           calculateItemTotal(
                             item
@@ -2364,11 +2551,9 @@ export default function Sales() {
                               `new-${index}`
                             }
                           >
-
                             {/* PRODUCT */}
 
                             <td>
-
                               <input
                                 type="text"
                                 className="form-control"
@@ -2382,7 +2567,9 @@ export default function Sales() {
                                   handleItemChange(
                                     index,
                                     "product",
-                                    e.target.value
+                                    e
+                                      .target
+                                      .value
                                   )
                                 }
                                 disabled={
@@ -2390,13 +2577,11 @@ export default function Sales() {
                                 }
                                 required
                               />
-
                             </td>
 
-                            {/* EGG ITEM */}
+                            {/* EGG */}
 
                             <td>
-
                               <select
                                 className={`form-select ${
                                   item.is_egg
@@ -2414,7 +2599,9 @@ export default function Sales() {
                                   handleItemChange(
                                     index,
                                     "is_egg",
-                                    e.target.value ===
+                                    e
+                                      .target
+                                      .value ===
                                       "yes"
                                   )
                                 }
@@ -2422,7 +2609,6 @@ export default function Sales() {
                                   saving
                                 }
                               >
-
                                 <option value="no">
                                   No
                                 </option>
@@ -2430,15 +2616,12 @@ export default function Sales() {
                                 <option value="yes">
                                   Yes
                                 </option>
-
                               </select>
-
                             </td>
 
                             {/* UNIT */}
 
                             <td>
-
                               <select
                                 className="form-select"
                                 value={
@@ -2451,16 +2634,19 @@ export default function Sales() {
                                   handleItemChange(
                                     index,
                                     "unit",
-                                    e.target.value
+                                    e
+                                      .target
+                                      .value
                                   )
                                 }
                                 disabled={
                                   saving
                                 }
                               >
-
                                 {units.map(
-                                  (unit) => (
+                                  (
+                                    unit
+                                  ) => (
                                     <option
                                       key={
                                         unit.value
@@ -2475,15 +2661,12 @@ export default function Sales() {
                                     </option>
                                   )
                                 )}
-
                               </select>
-
                             </td>
 
                             {/* QUANTITY */}
 
                             <td>
-
                               <input
                                 type="number"
                                 min="0"
@@ -2493,13 +2676,7 @@ export default function Sales() {
                                     ? "1"
                                     : "0.01"
                                 }
-                                className={`form-control ${
-                                  item.is_egg &&
-                                  totalEggsInForm >
-                                    eggStock
-                                    ? "is-invalid"
-                                    : ""
-                                }`}
+                                className="form-control"
                                 value={
                                   item.quantity
                                 }
@@ -2509,7 +2686,9 @@ export default function Sales() {
                                   handleItemChange(
                                     index,
                                     "quantity",
-                                    e.target.value
+                                    e
+                                      .target
+                                      .value
                                   )
                                 }
                                 disabled={
@@ -2522,23 +2701,19 @@ export default function Sales() {
                                 eggQuantity >
                                   0 && (
                                   <small className="text-success d-block mt-1">
-
                                     <i className="bi bi-egg-fill me-1"></i>
 
-                                    {formatMoney(
+                                    {formatNumber(
                                       eggQuantity
                                     )}{" "}
                                     eggs
-
                                   </small>
                                 )}
-
                             </td>
 
-                            {/* UNIT PRICE */}
+                            {/* PRICE */}
 
                             <td>
-
                               <input
                                 type="number"
                                 min="0"
@@ -2553,7 +2728,9 @@ export default function Sales() {
                                   handleItemChange(
                                     index,
                                     "unit_price",
-                                    e.target.value
+                                    e
+                                      .target
+                                      .value
                                   )
                                 }
                                 disabled={
@@ -2561,26 +2738,22 @@ export default function Sales() {
                                 }
                                 required
                               />
-
                             </td>
 
                             {/* TOTAL */}
 
                             <td>
-
                               <strong>
                                 TZS{" "}
                                 {formatMoney(
                                   itemTotal
                                 )}
                               </strong>
-
                             </td>
 
                             {/* REMOVE */}
 
                             <td>
-
                               <button
                                 type="button"
                                 className="btn btn-outline-danger btn-sm"
@@ -2599,128 +2772,140 @@ export default function Sales() {
                               >
                                 <i className="bi bi-trash"></i>
                               </button>
-
                             </td>
-
                           </tr>
                         );
                       }
                     )}
-
                   </tbody>
-
                 </table>
-
               </div>
 
-              {/* ===================================================
-                  STOCK WARNING
-              ==================================================== */}
+              {/* =================================================
+                  EGG STOCK SUMMARY
+              ================================================== */}
 
               {totalEggsInForm >
                 0 && (
                 <div
-                  className={`alert mt-3 mb-0 ${
-                    hasEnoughEggStock
-                      ? "alert-success"
-                      : "alert-danger"
-                  }`}
+                  className={`alert ${
+                    insufficientEggStock
+                      ? "alert-danger"
+                      : "alert-success"
+                  } mt-3 mb-0`}
                 >
-
                   <div className="d-flex align-items-start">
-
                     <i
                       className={`bi ${
-                        hasEnoughEggStock
-                          ? "bi-egg-fill"
-                          : "bi-exclamation-triangle-fill"
+                        insufficientEggStock
+                          ? "bi-exclamation-triangle-fill"
+                          : "bi-egg-fill"
                       } fs-5 me-2`}
-                    ></i>
+                    />
 
-                    <div className="w-100">
-
+                    <div>
                       <strong>
-                        Egg Stock Check
-                      </strong>
-
-                      <div className="mt-1">
-
-                        Available stock:{" "}
+                        Egg Stock Deduction:
+                      </strong>{" "}
+                      {formatNumber(
+                        totalEggsInForm
+                      )}{" "}
+                      eggs
+                      <div className="small mt-1">
+                        Current stock:{" "}
                         <strong>
-                          {formatMoney(
-                            eggStock
-                          )}{" "}
-                          eggs
-                        </strong>
-
+                          {formatNumber(
+                            eggInventory.current_stock
+                          )}
+                        </strong>{" "}
+                        eggs
                       </div>
 
-                      <div>
-
-                        This sale requires:{" "}
-                        <strong>
-                          {formatMoney(
-                            totalEggsInForm
-                          )}{" "}
-                          eggs
-                        </strong>
-
-                      </div>
-
-                      {hasEnoughEggStock ? (
-                        <div className="mt-1 text-success">
-
-                          <i className="bi bi-check-circle me-1"></i>
-
-                          Stock is sufficient.
-
-                          <br />
-
-                          Remaining after sale:{" "}
+                      {insufficientEggStock ? (
+                        <div className="small text-danger mt-1">
                           <strong>
-                            {formatMoney(
-                              remainingEggStock
-                            )}{" "}
-                            eggs
-                          </strong>
-
+                            Insufficient stock.
+                          </strong>{" "}
+                          You need{" "}
+                          <strong>
+                            {formatNumber(
+                              totalEggsInForm -
+                                eggInventory.current_stock
+                            )}
+                          </strong>{" "}
+                          additional eggs.
                         </div>
                       ) : (
-                        <div className="mt-1">
-
-                          <i className="bi bi-x-circle me-1"></i>
-
+                        <div className="small text-success mt-1">
+                          Remaining after sale:{" "}
                           <strong>
-                            Sale cannot be completed.
-                          </strong>
-
-                          <br />
-
-                          You are short by{" "}
-                          <strong>
-                            {formatMoney(
-                              totalEggsInForm -
-                                eggStock
-                            )}{" "}
-                            eggs.
-                          </strong>
-
+                            {formatNumber(
+                              remainingEggStock
+                            )}
+                          </strong>{" "}
+                          eggs
                         </div>
                       )}
 
+                      <div className="small text-muted mt-2">
+                        {form.items
+                          .filter(
+                            (
+                              item
+                            ) =>
+                              item.is_egg
+                          )
+                          .map(
+                            (
+                              item,
+                              index
+                            ) => {
+                              const quantity =
+                                Number(
+                                  item.quantity ||
+                                    0
+                                );
+
+                              const eggs =
+                                calculateEggQuantity(
+                                  item
+                                );
+
+                              return (
+                                <span
+                                  key={
+                                    index
+                                  }
+                                  className="d-block"
+                                >
+                                  {item.product ||
+                                    "Egg item"}{" "}
+                                  —{" "}
+                                  {
+                                    quantity
+                                  }{" "}
+                                  {
+                                    item.unit
+                                  }{" "}
+                                  ={" "}
+                                  {formatNumber(
+                                    eggs
+                                  )}{" "}
+                                  eggs
+                                </span>
+                              );
+                            }
+                          )}
+                      </div>
                     </div>
-
                   </div>
-
                 </div>
               )}
-
             </div>
 
             {/* DISCOUNT */}
 
             <div className="col-md-4">
-
               <label className="form-label">
                 Discount (TZS)
               </label>
@@ -2742,13 +2927,11 @@ export default function Sales() {
                   saving
                 }
               />
-
             </div>
 
             {/* AMOUNT PAID */}
 
             <div className="col-md-4">
-
               <label className="form-label">
                 {editingId
                   ? "Amount Paid"
@@ -2795,19 +2978,16 @@ export default function Sales() {
                   </small>
                 )
               )}
-
             </div>
 
             {/* PAYMENT STATUS */}
 
             <div className="col-md-4">
-
               <label className="form-label">
                 Payment Status
               </label>
 
               <div className="form-control bg-light">
-
                 <span
                   className={`status ${getPaymentStatusClass(
                     paymentStatus
@@ -2817,15 +2997,12 @@ export default function Sales() {
                     paymentStatus
                   )}
                 </span>
-
               </div>
-
             </div>
 
             {/* NOTES */}
 
             <div className="col-12">
-
               <label className="form-label">
                 Notes
               </label>
@@ -2845,21 +3022,15 @@ export default function Sales() {
                   saving
                 }
               />
-
             </div>
 
             {/* TOTALS */}
 
             <div className="col-12">
-
               <div className="border rounded p-3 bg-light">
-
                 <div className="row justify-content-end">
-
                   <div className="col-md-5">
-
                     <div className="d-flex justify-content-between mb-2">
-
                       <span>
                         Subtotal
                       </span>
@@ -2870,11 +3041,9 @@ export default function Sales() {
                           subtotal
                         )}
                       </strong>
-
                     </div>
 
                     <div className="d-flex justify-content-between mb-2">
-
                       <span>
                         Discount
                       </span>
@@ -2885,13 +3054,11 @@ export default function Sales() {
                           discount
                         )}
                       </strong>
-
                     </div>
 
                     <hr />
 
                     <div className="d-flex justify-content-between mb-2">
-
                       <strong>
                         Total
                       </strong>
@@ -2902,11 +3069,9 @@ export default function Sales() {
                           total
                         )}
                       </strong>
-
                     </div>
 
                     <div className="d-flex justify-content-between mb-2">
-
                       <span>
                         Amount Paid
                       </span>
@@ -2917,11 +3082,9 @@ export default function Sales() {
                           amountPaid
                         )}
                       </strong>
-
                     </div>
 
                     <div className="d-flex justify-content-between">
-
                       <strong>
                         Balance
                       </strong>
@@ -2939,40 +3102,41 @@ export default function Sales() {
                           balance
                         )}
                       </strong>
-
                     </div>
-
                   </div>
-
                 </div>
-
               </div>
-
             </div>
 
             {/* SAVE */}
 
             <div className="col-12">
-
               <button
                 type="submit"
                 className="btn btn-success"
                 disabled={
                   saving ||
-                  loadingEggStock ||
-                  (totalEggsInForm >
-                    0 &&
-                    !hasEnoughEggStock)
+                  loadingEggInventory ||
+                  insufficientEggStock
                 }
               >
-
                 {saving ? (
                   <>
                     <span className="spinner-border spinner-border-sm me-2"></span>
 
                     {editingId
                       ? "Updating..."
-                      : "Checking Stock..."}
+                      : "Saving..."}
+                  </>
+                ) : loadingEggInventory ? (
+                  <>
+                    <span className="spinner-border spinner-border-sm me-2"></span>
+                    Checking Stock...
+                  </>
+                ) : insufficientEggStock ? (
+                  <>
+                    <i className="bi bi-exclamation-triangle me-1"></i>
+                    Insufficient Egg Stock
                   </>
                 ) : (
                   <>
@@ -2983,7 +3147,6 @@ export default function Sales() {
                       : "Save Sale"}
                   </>
                 )}
-
               </button>
 
               {!editingId && (
@@ -3001,38 +3164,32 @@ export default function Sales() {
                   Clear
                 </button>
               )}
-
             </div>
-
           </div>
-
         </form>
-
       </div>
 
-      {/* =========================================================
+      {/* =======================================================
           SALES RECORDS
-      ========================================================== */}
+      ======================================================== */}
 
       <div className="table-card">
-
         <div className="d-flex justify-content-between align-items-center p-3">
-
           <div>
-
             <h5 className="mb-1">
               Sales Records
             </h5>
 
             <small className="text-muted">
-              {filteredSales.length}{" "}
+              {
+                filteredSales.length
+              }{" "}
               record
               {filteredSales.length !==
               1
                 ? "s"
                 : ""}
             </small>
-
           </div>
 
           <div
@@ -3041,9 +3198,7 @@ export default function Sales() {
               width: "100%",
             }}
           >
-
             <div className="input-group">
-
               <span className="input-group-text">
                 <i className="bi bi-search"></i>
               </span>
@@ -3055,27 +3210,22 @@ export default function Sales() {
                 value={
                   search
                 }
-                onChange={(e) =>
+                onChange={(
+                  e
+                ) =>
                   setSearch(
                     e.target.value
                   )
                 }
               />
-
             </div>
-
           </div>
-
         </div>
 
         <div className="table-responsive">
-
           <table className="table align-middle mb-0">
-
             <thead>
-
               <tr>
-
                 <th>
                   Invoice
                 </th>
@@ -3115,47 +3265,36 @@ export default function Sales() {
                 <th>
                   Actions
                 </th>
-
               </tr>
-
             </thead>
 
             <tbody>
-
               {loading ? (
                 <tr>
-
                   <td
                     colSpan="10"
                     className="text-center py-5"
                   >
-
                     <div className="spinner-border text-success"></div>
 
                     <div className="mt-2 text-muted">
                       Loading sales...
                     </div>
-
                   </td>
-
                 </tr>
               ) : filteredSales.length ===
                 0 ? (
                 <tr>
-
                   <td
                     colSpan="10"
                     className="text-center py-5 text-muted"
                   >
-
                     <i className="bi bi-receipt fs-2 d-block mb-2"></i>
 
                     {search
                       ? "No sales match your search."
                       : "No sales recorded yet."}
-
                   </td>
-
                 </tr>
               ) : (
                 filteredSales.map(
@@ -3181,17 +3320,14 @@ export default function Sales() {
                           sale.id
                         }
                       >
-
                         {/* INVOICE */}
 
                         <td>
-
                           <span className="record-link">
                             {
                               sale.invoice_no
                             }
                           </span>
-
                         </td>
 
                         {/* DATE */}
@@ -3213,7 +3349,6 @@ export default function Sales() {
                         {/* PRODUCTS */}
 
                         <td>
-
                           {sale.items
                             ?.length ? (
                             sale.items.map(
@@ -3234,7 +3369,6 @@ export default function Sales() {
                                     }
                                     className="mb-1"
                                   >
-
                                     <span>
                                       {
                                         item.product
@@ -3262,14 +3396,13 @@ export default function Sales() {
 
                                         <small className="text-success ms-1">
                                           (
-                                          {formatMoney(
+                                          {formatNumber(
                                             eggQuantity
                                           )}{" "}
                                           eggs)
                                         </small>
                                       </>
                                     )}
-
                                   </div>
                                 );
                               }
@@ -3277,39 +3410,33 @@ export default function Sales() {
                           ) : (
                             "-"
                           )}
-
                         </td>
 
                         {/* AMOUNT */}
 
                         <td>
-
                           <strong>
                             TZS{" "}
                             {formatMoney(
                               sale.total
                             )}
                           </strong>
-
                         </td>
 
                         {/* PAID */}
 
                         <td>
-
                           <strong className="text-success">
                             TZS{" "}
                             {formatMoney(
                               salePaid
                             )}
                           </strong>
-
                         </td>
 
                         {/* BALANCE */}
 
                         <td>
-
                           <strong
                             className={
                               saleBalance >
@@ -3323,13 +3450,11 @@ export default function Sales() {
                               saleBalance
                             )}
                           </strong>
-
                         </td>
 
-                        {/* PAYMENT METHOD */}
+                        {/* PAYMENT */}
 
                         <td>
-
                           <span
                             className={`status ${
                               sale.payment_method ===
@@ -3342,13 +3467,11 @@ export default function Sales() {
                               sale.payment_method
                             )}
                           </span>
-
                         </td>
 
                         {/* STATUS */}
 
                         <td>
-
                           <span
                             className={`status ${getPaymentStatusClass(
                               saleStatus
@@ -3358,14 +3481,13 @@ export default function Sales() {
                               saleStatus
                             )}
                           </span>
-
                         </td>
 
                         {/* ACTIONS */}
 
                         <td>
-
                           <div className="d-flex gap-1">
+                            {/* RECEIVE PAYMENT */}
 
                             {saleBalance >
                               0 && (
@@ -3388,6 +3510,8 @@ export default function Sales() {
                               </button>
                             )}
 
+                            {/* PAYMENT HISTORY */}
+
                             <button
                               type="button"
                               className="btn btn-outline-info btn-sm"
@@ -3405,6 +3529,8 @@ export default function Sales() {
                             >
                               <i className="bi bi-clock-history"></i>
                             </button>
+
+                            {/* EDIT */}
 
                             <button
                               type="button"
@@ -3424,6 +3550,8 @@ export default function Sales() {
                               <i className="bi bi-pencil"></i>
                             </button>
 
+                            {/* DELETE */}
+
                             <button
                               type="button"
                               className="btn btn-outline-danger btn-sm"
@@ -3439,37 +3567,28 @@ export default function Sales() {
                               }
                               title="Delete sale"
                             >
-
                               {deletingId ===
                               sale.id ? (
                                 <span className="spinner-border spinner-border-sm"></span>
                               ) : (
                                 <i className="bi bi-trash"></i>
                               )}
-
                             </button>
-
                           </div>
-
                         </td>
-
                       </tr>
                     );
                   }
                 )
               )}
-
             </tbody>
-
           </table>
-
         </div>
-
       </div>
 
-      {/* =========================================================
+      {/* =======================================================
           RECEIVE PAYMENT MODAL
-      ========================================================== */}
+      ======================================================== */}
 
       {paymentSale && (
         <div
@@ -3481,15 +3600,10 @@ export default function Sales() {
               "rgba(0,0,0,0.5)",
           }}
         >
-
           <div className="modal-dialog modal-dialog-centered">
-
             <div className="modal-content">
-
               <div className="modal-header">
-
                 <div>
-
                   <h5 className="modal-title">
                     Receive Payment
                   </h5>
@@ -3502,7 +3616,6 @@ export default function Sales() {
                       }
                     </strong>
                   </small>
-
                 </div>
 
                 <button
@@ -3515,7 +3628,6 @@ export default function Sales() {
                     savingPayment
                   }
                 />
-
               </div>
 
               <form
@@ -3523,13 +3635,11 @@ export default function Sales() {
                   savePayment
                 }
               >
-
                 <div className="modal-body">
+                  {/* SALE SUMMARY */}
 
                   <div className="row g-3 mb-3">
-
                     <div className="col-4">
-
                       <small className="text-muted d-block">
                         Sale Total
                       </small>
@@ -3540,11 +3650,9 @@ export default function Sales() {
                           paymentSale.total
                         )}
                       </strong>
-
                     </div>
 
                     <div className="col-4">
-
                       <small className="text-muted d-block">
                         Paid
                       </small>
@@ -3557,11 +3665,9 @@ export default function Sales() {
                           )
                         )}
                       </strong>
-
                     </div>
 
                     <div className="col-4">
-
                       <small className="text-muted d-block">
                         Balance
                       </small>
@@ -3574,15 +3680,14 @@ export default function Sales() {
                           )
                         )}
                       </strong>
-
                     </div>
-
                   </div>
 
                   <hr />
 
-                  <div className="mb-3">
+                  {/* DATE */}
 
+                  <div className="mb-3">
                     <label className="form-label">
                       Payment Date
                     </label>
@@ -3602,11 +3707,11 @@ export default function Sales() {
                       }
                       required
                     />
-
                   </div>
 
-                  <div className="mb-3">
+                  {/* AMOUNT */}
 
+                  <div className="mb-3">
                     <label className="form-label">
                       Amount (TZS)
                     </label>
@@ -3641,11 +3746,11 @@ export default function Sales() {
                         )
                       )}
                     </small>
-
                   </div>
 
-                  <div className="mb-3">
+                  {/* METHOD */}
 
+                  <div className="mb-3">
                     <label className="form-label">
                       Payment Method
                     </label>
@@ -3663,9 +3768,10 @@ export default function Sales() {
                         savingPayment
                       }
                     >
-
                       {paymentTransactionMethods.map(
-                        (method) => (
+                        (
+                          method
+                        ) => (
                           <option
                             key={
                               method.value
@@ -3680,13 +3786,12 @@ export default function Sales() {
                           </option>
                         )
                       )}
-
                     </select>
-
                   </div>
 
-                  <div className="mb-3">
+                  {/* REFERENCE */}
 
+                  <div className="mb-3">
                     <label className="form-label">
                       Reference
                     </label>
@@ -3706,11 +3811,11 @@ export default function Sales() {
                         savingPayment
                       }
                     />
-
                   </div>
 
-                  <div className="mb-0">
+                  {/* NOTES */}
 
+                  <div className="mb-0">
                     <label className="form-label">
                       Notes
                     </label>
@@ -3730,13 +3835,10 @@ export default function Sales() {
                         savingPayment
                       }
                     />
-
                   </div>
-
                 </div>
 
                 <div className="modal-footer">
-
                   <button
                     type="button"
                     className="btn btn-light"
@@ -3757,7 +3859,6 @@ export default function Sales() {
                       savingPayment
                     }
                   >
-
                     {savingPayment ? (
                       <>
                         <span className="spinner-border spinner-border-sm me-2"></span>
@@ -3769,23 +3870,17 @@ export default function Sales() {
                         Receive Payment
                       </>
                     )}
-
                   </button>
-
                 </div>
-
               </form>
-
             </div>
-
           </div>
-
         </div>
       )}
 
-      {/* =========================================================
+      {/* =======================================================
           PAYMENT HISTORY MODAL
-      ========================================================== */}
+      ======================================================== */}
 
       {paymentHistorySale && (
         <div
@@ -3797,15 +3892,10 @@ export default function Sales() {
               "rgba(0,0,0,0.5)",
           }}
         >
-
           <div className="modal-dialog modal-lg modal-dialog-centered">
-
             <div className="modal-content">
-
               <div className="modal-header">
-
                 <div>
-
                   <h5 className="modal-title">
                     Payment History
                   </h5>
@@ -3818,7 +3908,6 @@ export default function Sales() {
                       }
                     </strong>
                   </small>
-
                 </div>
 
                 <button
@@ -3831,17 +3920,14 @@ export default function Sales() {
                     loadingPaymentHistory
                   }
                 />
-
               </div>
 
               <div className="modal-body">
+                {/* SUMMARY */}
 
                 <div className="row g-3 mb-4">
-
                   <div className="col-md-4">
-
                     <div className="border rounded p-3">
-
                       <small className="text-muted d-block">
                         Sale Total
                       </small>
@@ -3852,15 +3938,11 @@ export default function Sales() {
                           paymentHistorySale.total
                         )}
                       </strong>
-
                     </div>
-
                   </div>
 
                   <div className="col-md-4">
-
                     <div className="border rounded p-3">
-
                       <small className="text-muted d-block">
                         Total Paid
                       </small>
@@ -3873,15 +3955,11 @@ export default function Sales() {
                           )
                         )}
                       </strong>
-
                     </div>
-
                   </div>
 
                   <div className="col-md-4">
-
                     <div className="border rounded p-3">
-
                       <small className="text-muted d-block">
                         Outstanding
                       </small>
@@ -3894,41 +3972,30 @@ export default function Sales() {
                           )
                         )}
                       </strong>
-
                     </div>
-
                   </div>
-
                 </div>
 
                 {loadingPaymentHistory ? (
                   <div className="text-center py-5">
-
                     <div className="spinner-border text-success"></div>
 
                     <div className="mt-2 text-muted">
                       Loading payment history...
                     </div>
-
                   </div>
                 ) : paymentHistory.length ===
                   0 ? (
                   <div className="text-center py-5 text-muted">
-
                     <i className="bi bi-cash-stack fs-1 d-block mb-2"></i>
 
                     No payment transactions found.
-
                   </div>
                 ) : (
                   <div className="table-responsive">
-
                     <table className="table table-bordered align-middle">
-
                       <thead>
-
                         <tr>
-
                           <th>
                             #
                           </th>
@@ -3952,13 +4019,10 @@ export default function Sales() {
                           <th>
                             Notes
                           </th>
-
                         </tr>
-
                       </thead>
 
                       <tbody>
-
                         {paymentHistory.map(
                           (
                             payment,
@@ -3970,7 +4034,6 @@ export default function Sales() {
                                 index
                               }
                             >
-
                               <td>
                                 {index +
                                   1}
@@ -3983,13 +4046,11 @@ export default function Sales() {
                               </td>
 
                               <td>
-
                                 <span className="status active">
                                   {getTransactionPaymentMethodLabel(
                                     payment.payment_method
                                   )}
                                 </span>
-
                               </td>
 
                               <td>
@@ -4000,14 +4061,12 @@ export default function Sales() {
                               </td>
 
                               <td className="text-end">
-
                                 <strong className="text-success">
                                   TZS{" "}
                                   {formatMoney(
                                     payment.amount
                                   )}
                                 </strong>
-
                               </td>
 
                               <td>
@@ -4016,17 +4075,13 @@ export default function Sales() {
                                   "-"
                                 }
                               </td>
-
                             </tr>
                           )
                         )}
-
                       </tbody>
 
                       <tfoot>
-
                         <tr>
-
                           <th
                             colSpan="4"
                             className="text-end"
@@ -4035,7 +4090,6 @@ export default function Sales() {
                           </th>
 
                           <th className="text-end">
-
                             <strong className="text-success">
                               TZS{" "}
                               {formatMoney(
@@ -4053,24 +4107,17 @@ export default function Sales() {
                                 )
                               )}
                             </strong>
-
                           </th>
 
                           <th />
-
                         </tr>
-
                       </tfoot>
-
                     </table>
-
                   </div>
                 )}
-
               </div>
 
               <div className="modal-footer">
-
                 {getSaleBalance(
                   paymentHistorySale
                 ) > 0 && (
@@ -4105,15 +4152,12 @@ export default function Sales() {
                 >
                   Close
                 </button>
-
               </div>
-
             </div>
-
           </div>
-
         </div>
       )}
     </>
   );
 }
+
