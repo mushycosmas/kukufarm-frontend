@@ -3798,319 +3798,331 @@ export default function Sales() {
           }}
         >
 
-          <div className="modal-dialog modal-lg modal-dialog-centered">
+         <div className="modal-dialog modal-lg modal-dialog-centered">
+  <div className="modal-content">
 
-            <div className="modal-content">
+    <div className="modal-header">
+      <div>
+        <h5 className="modal-title">
+          Payment History
+        </h5>
 
-              <div className="modal-header">
+        <small className="text-muted">
+          Invoice{" "}
+          <strong>
+            {paymentHistorySale.invoice_no}
+          </strong>
+        </small>
+      </div>
 
-                <div>
+      <button
+        type="button"
+        className="btn-close"
+        onClick={closePaymentHistory}
+        disabled={loadingPaymentHistory}
+      />
+    </div>
 
-                  <h5 className="modal-title">
-                    Payment History
-                  </h5>
+    <div className="modal-body">
 
-                  <small className="text-muted">
-                    Invoice{" "}
-                    <strong>
-                      {
-                        paymentHistorySale.invoice_no
-                      }
-                    </strong>
-                  </small>
+      {/* ================= SUMMARY ================= */}
+      <div className="row g-3 mb-4">
 
-                </div>
+        <div className="col-md-4">
+          <div className="border rounded p-3">
+            <small className="text-muted d-block">
+              Sale Total
+            </small>
 
-                <button
-                  type="button"
-                  className="btn-close"
-                  onClick={
-                    closePaymentHistory
-                  }
-                  disabled={
-                    loadingPaymentHistory
-                  }
-                />
+            <strong>
+              TZS{" "}
+              {formatMoney(
+                paymentHistorySale.total
+              )}
+            </strong>
+          </div>
+        </div>
 
-              </div>
+        <div className="col-md-4">
+          <div className="border rounded p-3">
+            <small className="text-muted d-block">
+              Total Paid
+            </small>
 
-              <div className="modal-body">
+            <strong className="text-success">
+              TZS{" "}
+              {formatMoney(
+                getSalePaid(paymentHistorySale)
+              )}
+            </strong>
+          </div>
+        </div>
 
-                <div className="row g-3 mb-4">
+        <div className="col-md-4">
+          <div className="border rounded p-3">
+            <small className="text-muted d-block">
+              Outstanding
+            </small>
 
-                  <div className="col-md-4">
+            <strong className="text-danger">
+              TZS{" "}
+              {formatMoney(
+                getSaleBalance(paymentHistorySale)
+              )}
+            </strong>
+          </div>
+        </div>
 
-                    <div className="border rounded p-3">
+      </div>
 
-                      <small className="text-muted d-block">
-                        Sale Total
-                      </small>
+      {/* ================= PAYMENT HISTORY ================= */}
+      {loadingPaymentHistory ? (
+        <div className="text-center py-5">
 
-                      <strong>
-                        TZS{" "}
-                        {formatMoney(
-                          paymentHistorySale.total
-                        )}
-                      </strong>
+          <div className="spinner-border text-success"></div>
 
-                    </div>
+          <div className="mt-2 text-muted">
+            Loading payment history...
+          </div>
 
-                  </div>
+        </div>
+      ) : (
+        (() => {
+          /*
+           * paymentHistory contains payments made through
+           * /sale-payments/.
+           *
+           * The initial payment is currently stored directly
+           * in Sale.amount_paid.
+           *
+           * Therefore:
+           *
+           * Initial Payment =
+           * Total Paid - Sum of SalePayment records
+           */
 
-                  <div className="col-md-4">
+          const totalPaid = Number(
+            getSalePaid(paymentHistorySale) || 0
+          );
 
-                    <div className="border rounded p-3">
+          const recordedPaymentsTotal =
+            paymentHistory.reduce(
+              (sum, payment) =>
+                sum + Number(payment.amount || 0),
+              0
+            );
 
-                      <small className="text-muted d-block">
-                        Total Paid
-                      </small>
+          const initialPayment = Math.max(
+            totalPaid - recordedPaymentsTotal,
+            0
+          );
+
+          /*
+           * Add the initial payment to the beginning
+           * of the displayed history.
+           */
+          const displayPaymentHistory =
+            initialPayment > 0
+              ? [
+                  {
+                    id: `initial-${paymentHistorySale.id}`,
+                    date:
+                      paymentHistorySale.date ||
+                      paymentHistorySale.created_at ||
+                      "-",
+                    payment_method:
+                      paymentHistorySale.payment_method ||
+                      "cash",
+                    reference: "-",
+                    amount: initialPayment,
+                    notes: "Initial payment",
+                    isInitialPayment: true,
+                  },
+                  ...paymentHistory,
+                ]
+              : paymentHistory;
+
+          return displayPaymentHistory.length === 0 ? (
+            <div className="text-center py-5 text-muted">
+
+              <i className="bi bi-cash-stack fs-1 d-block mb-2"></i>
+
+              No payment transactions found.
+
+            </div>
+          ) : (
+            <div className="table-responsive">
+
+              <table className="table table-bordered align-middle">
+
+                <thead>
+                  <tr>
+
+                    <th>
+                      #
+                    </th>
+
+                    <th>
+                      Date
+                    </th>
+
+                    <th>
+                      Method
+                    </th>
+
+                    <th>
+                      Reference
+                    </th>
+
+                    <th className="text-end">
+                      Amount
+                    </th>
+
+                    <th>
+                      Notes
+                    </th>
+
+                  </tr>
+                </thead>
+
+                <tbody>
+
+                  {displayPaymentHistory.map(
+                    (payment, index) => (
+                      <tr
+                        key={
+                          payment.id ||
+                          index
+                        }
+                      >
+
+                        <td>
+                          {index + 1}
+                        </td>
+
+                        <td>
+                          {payment.date || "-"}
+                        </td>
+
+                        <td>
+
+                          <span className="status active">
+                            {payment.isInitialPayment
+                              ? getTransactionPaymentMethodLabel(
+                                  payment.payment_method
+                                )
+                              : getTransactionPaymentMethodLabel(
+                                  payment.payment_method
+                                )}
+                          </span>
+
+                        </td>
+
+                        <td>
+                          {payment.reference || "-"}
+                        </td>
+
+                        <td className="text-end">
+
+                          <strong className="text-success">
+                            TZS{" "}
+                            {formatMoney(
+                              payment.amount
+                            )}
+                          </strong>
+
+                        </td>
+
+                        <td>
+                          {payment.notes || "-"}
+                        </td>
+
+                      </tr>
+                    )
+                  )}
+
+                </tbody>
+
+                <tfoot>
+
+                  <tr>
+
+                    <th
+                      colSpan="4"
+                      className="text-end"
+                    >
+                      Total Paid
+                    </th>
+
+                    <th className="text-end">
 
                       <strong className="text-success">
                         TZS{" "}
                         {formatMoney(
-                          getSalePaid(
-                            paymentHistorySale
+                          displayPaymentHistory.reduce(
+                            (sum, payment) =>
+                              sum +
+                              Number(
+                                payment.amount || 0
+                              ),
+                            0
                           )
                         )}
                       </strong>
 
-                    </div>
+                    </th>
 
-                  </div>
+                    <th />
 
-                  <div className="col-md-4">
+                  </tr>
 
-                    <div className="border rounded p-3">
+                </tfoot>
 
-                      <small className="text-muted d-block">
-                        Outstanding
-                      </small>
-
-                      <strong className="text-danger">
-                        TZS{" "}
-                        {formatMoney(
-                          getSaleBalance(
-                            paymentHistorySale
-                          )
-                        )}
-                      </strong>
-
-                    </div>
-
-                  </div>
-
-                </div>
-
-                {loadingPaymentHistory ? (
-                  <div className="text-center py-5">
-
-                    <div className="spinner-border text-success"></div>
-
-                    <div className="mt-2 text-muted">
-                      Loading payment history...
-                    </div>
-
-                  </div>
-                ) : paymentHistory.length ===
-                  0 ? (
-                  <div className="text-center py-5 text-muted">
-
-                    <i className="bi bi-cash-stack fs-1 d-block mb-2"></i>
-
-                    No payment transactions found.
-
-                  </div>
-                ) : (
-                  <div className="table-responsive">
-
-                    <table className="table table-bordered align-middle">
-
-                      <thead>
-
-                        <tr>
-
-                          <th>
-                            #
-                          </th>
-
-                          <th>
-                            Date
-                          </th>
-
-                          <th>
-                            Method
-                          </th>
-
-                          <th>
-                            Reference
-                          </th>
-
-                          <th className="text-end">
-                            Amount
-                          </th>
-
-                          <th>
-                            Notes
-                          </th>
-
-                        </tr>
-
-                      </thead>
-
-                      <tbody>
-
-                        {paymentHistory.map(
-                          (
-                            payment,
-                            index
-                          ) => (
-                            <tr
-                              key={
-                                payment.id ||
-                                index
-                              }
-                            >
-
-                              <td>
-                                {index +
-                                  1}
-                              </td>
-
-                              <td>
-                                {
-                                  payment.date
-                                }
-                              </td>
-
-                              <td>
-
-                                <span className="status active">
-                                  {getTransactionPaymentMethodLabel(
-                                    payment.payment_method
-                                  )}
-                                </span>
-
-                              </td>
-
-                              <td>
-                                {
-                                  payment.reference ||
-                                  "-"
-                                }
-                              </td>
-
-                              <td className="text-end">
-
-                                <strong className="text-success">
-                                  TZS{" "}
-                                  {formatMoney(
-                                    payment.amount
-                                  )}
-                                </strong>
-
-                              </td>
-
-                              <td>
-                                {
-                                  payment.notes ||
-                                  "-"
-                                }
-                              </td>
-
-                            </tr>
-                          )
-                        )}
-
-                      </tbody>
-
-                      <tfoot>
-
-                        <tr>
-
-                          <th
-                            colSpan="4"
-                            className="text-end"
-                          >
-                            Total Paid
-                          </th>
-
-                          <th className="text-end">
-
-                            <strong className="text-success">
-                              TZS{" "}
-                              {formatMoney(
-                                paymentHistory.reduce(
-                                  (
-                                    sum,
-                                    payment
-                                  ) =>
-                                    sum +
-                                    Number(
-                                      payment.amount ||
-                                        0
-                                    ),
-                                  0
-                                )
-                              )}
-                            </strong>
-
-                          </th>
-
-                          <th />
-
-                        </tr>
-
-                      </tfoot>
-
-                    </table>
-
-                  </div>
-                )}
-
-              </div>
-
-              <div className="modal-footer">
-
-                {getSaleBalance(
-                  paymentHistorySale
-                ) > 0 && (
-                  <button
-                    type="button"
-                    className="btn btn-success"
-                    onClick={() => {
-                      const sale =
-                        paymentHistorySale;
-
-                      closePaymentHistory();
-
-                      openPaymentModal(
-                        sale
-                      );
-                    }}
-                  >
-                    <i className="bi bi-cash-coin me-1"></i>
-                    Receive Payment
-                  </button>
-                )}
-
-                <button
-                  type="button"
-                  className="btn btn-light"
-                  onClick={
-                    closePaymentHistory
-                  }
-                  disabled={
-                    loadingPaymentHistory
-                  }
-                >
-                  Close
-                </button>
-
-              </div>
+              </table>
 
             </div>
+          );
+        })()
+      )}
 
-          </div>
+    </div>
+
+    {/* ================= FOOTER ================= */}
+    <div className="modal-footer">
+
+      {getSaleBalance(
+        paymentHistorySale
+      ) > 0 && (
+        <button
+          type="button"
+          className="btn btn-success"
+          onClick={() => {
+            const sale =
+              paymentHistorySale;
+
+            closePaymentHistory();
+
+            openPaymentModal(sale);
+          }}
+        >
+          <i className="bi bi-cash-coin me-1"></i>
+          Receive Payment
+        </button>
+      )}
+
+      <button
+        type="button"
+        className="btn btn-light"
+        onClick={closePaymentHistory}
+        disabled={loadingPaymentHistory}
+      >
+        Close
+      </button>
+
+    </div>
+
+  </div>
+</div>
 
         </div>
       )}
