@@ -1,3 +1,4 @@
+
 import React, { useEffect, useMemo, useState } from "react";
 import PageHeader from "../components/common/PageHeader";
 import api from "../services/api";
@@ -6,7 +7,6 @@ const initialForm = {
   name: "",
   phone: "",
   location: "",
-  balance: "",
 };
 
 function getList(response) {
@@ -52,7 +52,10 @@ function extractError(error) {
 }
 
 function formatMoney(value) {
-  return Number(value || 0).toLocaleString("en-TZ");
+  return Number(value || 0).toLocaleString("en-TZ", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
 }
 
 function formatNumber(value) {
@@ -79,7 +82,7 @@ function formatDate(value) {
 
 /*
 |--------------------------------------------------------------------------
-| Helpers for Sales / Payment data
+| Sale Helpers
 |--------------------------------------------------------------------------
 */
 
@@ -91,87 +94,141 @@ function getCustomerId(item) {
   );
 }
 
-function getSaleDate(item) {
+function getSaleDate(sale) {
   return (
-    item?.date ||
-    item?.sale_date ||
-    item?.transaction_date ||
-    item?.created_at
+    sale?.date ||
+    sale?.sale_date ||
+    sale?.transaction_date ||
+    sale?.created_at
   );
 }
 
-function getEggQuantity(item) {
-  return Number(
-    item?.eggs ??
-      item?.egg_quantity ??
-      item?.quantity ??
-      item?.eggs_sold ??
-      item?.quantity_eggs ??
-      0
+function getSaleTotal(sale) {
+  return Number(sale?.total || 0);
+}
+
+function getSalePaid(sale) {
+  /*
+   * IMPORTANT:
+   *
+   * Sale.amount_paid is the cumulative amount paid.
+   *
+   * Do NOT use SalePayment total here because
+   * SalePayment contains only individual payment
+   * transactions and may not include the initial payment.
+   */
+  return Number(sale?.amount_paid || 0);
+}
+
+function getSaleBalance(sale) {
+  /*
+   * Backend already defines:
+   *
+   * balance = total - amount_paid
+   *
+   * We calculate it again on frontend to make the
+   * customer profile reliable even if balance is
+   * not serialized by the API.
+   */
+  const total = getSaleTotal(sale);
+  const paid = getSalePaid(sale);
+
+  return Math.max(total - paid, 0);
+}
+
+/*
+|--------------------------------------------------------------------------
+| Sale Item Helpers
+|--------------------------------------------------------------------------
+*/
+
+function getSaleItems(sale) {
+  return Array.isArray(sale?.items) ? sale.items : [];
+}
+
+function getEggsFromItem(item) {
+  if (!item?.is_egg) {
+    return 0;
+  }
+
+  const quantity = Number(item?.quantity || 0);
+
+  /*
+   * Backend:
+   *
+   * tray = 30 eggs
+   * piece = 1 egg
+   */
+  if (item?.unit === "tray") {
+    return quantity * 30;
+  }
+
+  return quantity;
+}
+
+function getTraysFromItem(item) {
+  if (!item?.is_egg) {
+    return 0;
+  }
+
+  if (item?.unit !== "tray") {
+    return 0;
+  }
+
+  return Number(item?.quantity || 0);
+}
+
+function getSaleEggs(sale) {
+  return getSaleItems(sale).reduce(
+    (sum, item) => sum + getEggsFromItem(item),
+    0
   );
 }
 
-function getTrays(item) {
-  return Number(
-    item?.trays ??
-      item?.tray_quantity ??
-      item?.egg_trays ??
-      0
+function getSaleTrays(sale) {
+  return getSaleItems(sale).reduce(
+    (sum, item) => sum + getTraysFromItem(item),
+    0
   );
 }
 
-function getSaleAmount(item) {
-  return Number(
-    item?.total_amount ??
-      item?.total ??
-      item?.amount ??
-      item?.selling_price ??
-      item?.grand_total ??
-      0
-  );
-}
+/*
+|--------------------------------------------------------------------------
+| Payment Helpers
+|--------------------------------------------------------------------------
+*/
 
-function getPaidAmount(item) {
-  return Number(
-    item?.amount_paid ??
-      item?.paid_amount ??
-      item?.payment ??
-      item?.paid ??
-      0
-  );
-}
-
-function getPaymentDate(item) {
+function getPaymentDate(payment) {
   return (
-    item?.date ||
-    item?.payment_date ||
-    item?.transaction_date ||
-    item?.created_at
+    payment?.date ||
+    payment?.payment_date ||
+    payment?.transaction_date ||
+    payment?.created_at
   );
 }
 
-function getPaymentAmount(item) {
+function getPaymentAmount(payment) {
   return Number(
-    item?.amount ??
-      item?.payment_amount ??
-      item?.paid_amount ??
-      item?.amount_paid ??
+    payment?.amount ??
+      payment?.payment_amount ??
+      payment?.paid_amount ??
+      payment?.amount_paid ??
       0
   );
 }
 
-function getPaymentMethod(item) {
+function getPaymentMethod(payment) {
   return (
-    item?.payment_method ||
-    item?.method ||
-    item?.payment_type ||
+    payment?.payment_method ||
+    payment?.method ||
+    payment?.payment_type ||
     "-"
   );
 }
 
 /*
 |--------------------------------------------------------------------------
-| Main Component
+| Component
 |--------------------------------------------------------------------------
 */
 
@@ -273,6 +330,12 @@ export default function Customers() {
     }));
   };
 
+  /*
+  |--------------------------------------------------------------------------
+  | Save Customer
+  |--------------------------------------------------------------------------
+  */
+
   const save = async (e) => {
     e.preventDefault();
 
@@ -290,7 +353,6 @@ export default function Customers() {
       name: form.name.trim(),
       phone: form.phone.trim(),
       location: form.location.trim(),
-      balance: Number(form.balance || 0),
     };
 
     try {
@@ -308,6 +370,7 @@ export default function Customers() {
       }
 
       resetForm();
+
       await loadCustomers();
     } catch (err) {
       setError(extractError(err));
@@ -315,6 +378,12 @@ export default function Customers() {
       setSaving(false);
     }
   };
+
+  /*
+  |--------------------------------------------------------------------------
+  | Edit Customer
+  |--------------------------------------------------------------------------
+  */
 
   const editCustomer = (customer) => {
     setError("");
@@ -326,7 +395,6 @@ export default function Customers() {
       name: customer.name || "",
       phone: customer.phone || "",
       location: customer.location || "",
-      balance: customer.balance ?? "",
     });
 
     setShowForm(true);
@@ -379,7 +447,7 @@ export default function Customers() {
 
   /*
   |--------------------------------------------------------------------------
-  | Customer Details
+  | Open Customer Details
   |--------------------------------------------------------------------------
   */
 
@@ -397,10 +465,22 @@ export default function Customers() {
 
     try {
       /*
-       * Load sales belonging to this customer.
+       * --------------------------------------------------------
+       * SALES
+       * --------------------------------------------------------
        *
-       * Main endpoint:
+       * Your backend supports:
+       *
        * /sales/?customer=<id>
+       *
+       * SaleSerializer returns:
+       *
+       * {
+       *   total,
+       *   amount_paid,
+       *   balance,
+       *   items: [...]
+       * }
        */
       const salesResponse = await api.get(
         `/sales/?customer=${customer.id}`
@@ -409,12 +489,17 @@ export default function Customers() {
       const sales = getList(salesResponse);
 
       /*
-       * Some backends may return all sales instead of
-       * filtering by customer. Filter again on frontend.
+       * Extra frontend filtering in case the backend
+       * does not apply the filter correctly.
        */
       const filteredSales = sales.filter((sale) => {
         const saleCustomerId = getCustomerId(sale);
 
+        /*
+         * If the API does not serialize customer ID,
+         * keep the sale because it came from the
+         * customer-filtered endpoint.
+         */
         if (
           saleCustomerId === undefined ||
           saleCustomerId === null ||
@@ -423,55 +508,85 @@ export default function Customers() {
           return true;
         }
 
-        return String(saleCustomerId) === String(customer.id);
+        return (
+          String(saleCustomerId) ===
+          String(customer.id)
+        );
       });
 
       setCustomerSales(filteredSales);
 
       /*
-       * Try to load payments.
+       * --------------------------------------------------------
+       * PAYMENTS
+       * --------------------------------------------------------
        *
-       * If your backend has:
-       * /sales/payments/?customer=<id>
+       * SalePaymentViewSet is normally registered as:
        *
-       * it will be used.
+       * /sales/payments/
+       *
+       * However, SalePaymentSerializer does NOT expose
+       * customer_id directly.
+       *
+       * It exposes:
+       *
+       * sale
+       * invoice_no
+       * customer_name
+       *
+       * Therefore we don't depend on customer_id here.
        */
       try {
         const paymentsResponse = await api.get(
-          `/sales/payments/?customer=${customer.id}`
+          `/sales/payments/?sale__customer=${customer.id}`
         );
 
         const payments = getList(paymentsResponse);
 
-        const filteredPayments = payments.filter((payment) => {
-          const paymentCustomerId = getCustomerId(payment);
-
-          if (
-            paymentCustomerId === undefined ||
-            paymentCustomerId === null ||
-            paymentCustomerId === ""
-          ) {
-            return true;
-          }
-
-          return (
-            String(paymentCustomerId) ===
-            String(customer.id)
-          );
-        });
-
-        setCustomerPayments(filteredPayments);
+        setCustomerPayments(payments);
       } catch (paymentError) {
         /*
-         * If a separate payments endpoint does not exist,
-         * don't prevent the customer details from loading.
+         * DjangoFilterBackend may not support the
+         * nested sale__customer filter depending on
+         * filterset configuration.
+         *
+         * In that case, load all payments and match
+         * their sale IDs against this customer's sales.
          */
-        console.warn(
-          "Payment endpoint unavailable:",
-          paymentError
-        );
+        try {
+          const allPaymentsResponse = await api.get(
+            "/sales/payments/"
+          );
 
-        setCustomerPayments([]);
+          const allPayments =
+            getList(allPaymentsResponse);
+
+          const customerSaleIds = new Set(
+            filteredSales.map((sale) =>
+              String(sale.id)
+            )
+          );
+
+          const filteredPayments = allPayments.filter(
+            (payment) =>
+              payment?.sale &&
+              customerSaleIds.has(
+                String(
+                  payment.sale?.id ??
+                    payment.sale
+                )
+              )
+          );
+
+          setCustomerPayments(filteredPayments);
+        } catch (fallbackError) {
+          console.warn(
+            "Payment endpoint unavailable:",
+            fallbackError
+          );
+
+          setCustomerPayments([]);
+        }
       }
     } catch (err) {
       setDetailsError(extractError(err));
@@ -517,14 +632,31 @@ export default function Customers() {
 
   /*
   |--------------------------------------------------------------------------
-  | Summary
+  | Customer Balance
+  |--------------------------------------------------------------------------
+  */
+
+  const getCustomerBalance = (customer) => {
+    /*
+     * If the customer API already provides balance,
+     * use it for the customer list.
+     *
+     * Detailed customer profile uses the actual
+     * Sale records as the source of truth.
+     */
+    return Number(customer?.balance || 0);
+  };
+
+  /*
+  |--------------------------------------------------------------------------
+  | Total Outstanding
   |--------------------------------------------------------------------------
   */
 
   const totalOutstanding = useMemo(() => {
     return data.reduce(
       (sum, customer) =>
-        sum + Number(customer.balance || 0),
+        sum + getCustomerBalance(customer),
       0
     );
   }, [data]);
@@ -536,53 +668,72 @@ export default function Customers() {
   */
 
   const customerDetails = useMemo(() => {
+    /*
+     * Total eggs purchased.
+     *
+     * IMPORTANT:
+     * Eggs are stored inside SaleItem.
+     */
     const totalEggs = customerSales.reduce(
-      (sum, sale) => sum + getEggQuantity(sale),
+      (sum, sale) =>
+        sum + getSaleEggs(sale),
       0
     );
 
+    /*
+     * Total trays purchased.
+     */
     const totalTrays = customerSales.reduce(
-      (sum, sale) => sum + getTrays(sale),
+      (sum, sale) =>
+        sum + getSaleTrays(sale),
       0
     );
 
+    /*
+     * Total value of all customer purchases.
+     */
     const totalPurchases = customerSales.reduce(
-      (sum, sale) => sum + getSaleAmount(sale),
+      (sum, sale) =>
+        sum + getSaleTotal(sale),
       0
     );
 
     /*
-     * Payments from separate payment records.
+     * Total amount actually paid.
+     *
+     * IMPORTANT:
+     *
+     * Sale.amount_paid is cumulative.
+     *
+     * Therefore:
+     *
+     * totalPayments =
+     *     SUM(Sale.amount_paid)
+     *
+     * NOT:
+     *
+     * SUM(SalePayment.amount)
+     *
+     * because SalePayment may only contain
+     * additional payments.
      */
-    const separatePayments = customerPayments.reduce(
-      (sum, payment) =>
-        sum + getPaymentAmount(payment),
+    const totalPayments = customerSales.reduce(
+      (sum, sale) =>
+        sum + getSalePaid(sale),
       0
     );
 
     /*
-     * If sales themselves contain amount_paid,
-     * calculate that too.
+     * Outstanding customer balance.
+     *
+     * This is calculated from every sale:
+     *
+     * total - cumulative paid
      */
-    const salePayments = customerSales.reduce(
-      (sum, sale) => sum + getPaidAmount(sale),
+    const remainingBalance = customerSales.reduce(
+      (sum, sale) =>
+        sum + getSaleBalance(sale),
       0
-    );
-
-    /*
-     * Prefer separate payment records when available.
-     */
-    const totalPayments =
-      customerPayments.length > 0
-        ? separatePayments
-        : salePayments;
-
-    /*
-     * Customer.balance is currently maintained by
-     * your customer API.
-     */
-    const remainingBalance = Number(
-      selectedCustomer?.balance || 0
     );
 
     return {
@@ -592,11 +743,7 @@ export default function Customers() {
       totalPayments,
       remainingBalance,
     };
-  }, [
-    customerSales,
-    customerPayments,
-    selectedCustomer,
-  ]);
+  }, [customerSales]);
 
   /*
   |--------------------------------------------------------------------------
@@ -612,7 +759,9 @@ export default function Customers() {
     return (
       <div className="mb-4">
         <div className="form-card">
+
           {/* HEADER */}
+
           <div className="d-flex justify-content-between align-items-center mb-4">
             <div>
               <h5 className="mb-1">
@@ -636,7 +785,9 @@ export default function Customers() {
           </div>
 
           {/* CUSTOMER PROFILE */}
+
           <div className="row g-3 mb-4">
+
             <div className="col-md-4">
               <div className="border rounded p-3 h-100">
                 <small className="text-muted d-block">
@@ -697,7 +848,11 @@ export default function Customers() {
           </div>
 
           {/* STAT CARDS */}
+
           <div className="row g-3 mb-4">
+
+            {/* EGGS */}
+
             <div className="col-md-3 col-6">
               <div className="border rounded p-3 h-100">
                 <small className="text-muted">
@@ -715,6 +870,8 @@ export default function Customers() {
                 </small>
               </div>
             </div>
+
+            {/* TRAYS */}
 
             <div className="col-md-3 col-6">
               <div className="border rounded p-3 h-100">
@@ -734,10 +891,12 @@ export default function Customers() {
               </div>
             </div>
 
+            {/* PAYMENTS */}
+
             <div className="col-md-3 col-6">
               <div className="border rounded p-3 h-100">
                 <small className="text-muted">
-                  Payments
+                  Total Paid
                 </small>
 
                 <h5 className="mb-0 mt-1 text-success">
@@ -748,6 +907,8 @@ export default function Customers() {
                 </h5>
               </div>
             </div>
+
+            {/* OUTSTANDING */}
 
             <div className="col-md-3 col-6">
               <div className="border rounded p-3 h-100">
@@ -772,6 +933,7 @@ export default function Customers() {
           </div>
 
           {/* ERROR */}
+
           {detailsError && (
             <div className="alert alert-danger">
               <i className="bi bi-exclamation-triangle me-2"></i>
@@ -780,6 +942,7 @@ export default function Customers() {
           )}
 
           {/* LOADING */}
+
           {detailsLoading ? (
             <div className="text-center py-5">
               <div className="spinner-border text-success"></div>
@@ -791,36 +954,43 @@ export default function Customers() {
           ) : (
             <>
               {/* PURCHASE HISTORY */}
+
               <div className="table-card mb-4">
+
                 <div className="p-3 border-bottom">
                   <h5 className="mb-1">
                     <i className="bi bi-cart-check me-2 text-success"></i>
-                    Egg Purchase History
+                    Purchase History
                   </h5>
 
                   <small className="text-muted">
-                    All egg purchases made by this customer
+                    All purchases made by this customer
                   </small>
                 </div>
 
                 <div className="table-responsive">
+
                   <table className="table align-middle mb-0">
+
                     <thead>
                       <tr>
                         <th>Date</th>
+                        <th>Invoice</th>
                         <th>Eggs</th>
                         <th>Trays</th>
                         <th>Amount</th>
                         <th>Paid</th>
                         <th>Balance</th>
+                        <th>Status</th>
                       </tr>
                     </thead>
 
                     <tbody>
+
                       {customerSales.length === 0 ? (
                         <tr>
                           <td
-                            colSpan="6"
+                            colSpan="8"
                             className="text-center py-5 text-muted"
                           >
                             <i className="bi bi-cart-x fs-2 d-block mb-2"></i>
@@ -832,17 +1002,21 @@ export default function Customers() {
                       ) : (
                         customerSales.map(
                           (sale, index) => {
+
                             const amount =
-                              getSaleAmount(sale);
+                              getSaleTotal(sale);
 
                             const paid =
-                              getPaidAmount(sale);
+                              getSalePaid(sale);
 
                             const balance =
-                              Math.max(
-                                amount - paid,
-                                0
-                              );
+                              getSaleBalance(sale);
+
+                            const eggs =
+                              getSaleEggs(sale);
+
+                            const trays =
+                              getSaleTrays(sale);
 
                             return (
                               <tr
@@ -851,6 +1025,7 @@ export default function Customers() {
                                   `sale-${index}`
                                 }
                               >
+
                                 <td>
                                   {formatDate(
                                     getSaleDate(sale)
@@ -858,15 +1033,18 @@ export default function Customers() {
                                 </td>
 
                                 <td>
-                                  {formatNumber(
-                                    getEggQuantity(sale)
-                                  )}
+                                  <strong>
+                                    {sale.invoice_no ||
+                                      "-"}
+                                  </strong>
                                 </td>
 
                                 <td>
-                                  {formatNumber(
-                                    getTrays(sale)
-                                  )}
+                                  {formatNumber(eggs)}
+                                </td>
+
+                                <td>
+                                  {formatNumber(trays)}
                                 </td>
 
                                 <td>
@@ -882,43 +1060,67 @@ export default function Customers() {
                                 <td
                                   className={
                                     balance > 0
-                                      ? "text-danger"
+                                      ? "text-danger fw-semibold"
                                       : "text-success"
                                   }
                                 >
                                   TZS{" "}
-                                  {formatMoney(
-                                    balance
+                                  {formatMoney(balance)}
+                                </td>
+
+                                <td>
+                                  {sale.payment_status ===
+                                  "paid" ? (
+                                    <span className="badge bg-success">
+                                      Paid
+                                    </span>
+                                  ) : sale.payment_status ===
+                                    "partial" ? (
+                                    <span className="badge bg-warning text-dark">
+                                      Partial
+                                    </span>
+                                  ) : (
+                                    <span className="badge bg-danger">
+                                      Unpaid
+                                    </span>
                                   )}
                                 </td>
+
                               </tr>
                             );
                           }
                         )
                       )}
+
                     </tbody>
                   </table>
                 </div>
               </div>
 
               {/* PAYMENT HISTORY */}
+
               <div className="table-card">
+
                 <div className="p-3 border-bottom">
                   <h5 className="mb-1">
                     <i className="bi bi-cash-stack me-2 text-success"></i>
-                    Payment History
+                    Additional Payment History
                   </h5>
 
                   <small className="text-muted">
-                    Payments received from this customer
+                    Individual additional payments received
+                    from this customer
                   </small>
                 </div>
 
                 <div className="table-responsive">
+
                   <table className="table align-middle mb-0">
+
                     <thead>
                       <tr>
                         <th>Date</th>
+                        <th>Invoice</th>
                         <th>Amount</th>
                         <th>Payment Method</th>
                         <th>Reference</th>
@@ -926,60 +1128,73 @@ export default function Customers() {
                     </thead>
 
                     <tbody>
+
                       {customerPayments.length === 0 ? (
                         <tr>
                           <td
-                            colSpan="4"
+                            colSpan="5"
                             className="text-center py-5 text-muted"
                           >
                             <i className="bi bi-wallet2 fs-2 d-block mb-2"></i>
 
-                            No separate payment records
-                            found.
+                            No additional payment
+                            records found.
                           </td>
                         </tr>
                       ) : (
                         customerPayments.map(
-                          (payment, index) => (
-                            <tr
-                              key={
-                                payment.id ||
-                                `payment-${index}`
-                              }
-                            >
-                              <td>
-                                {formatDate(
-                                  getPaymentDate(
+                          (payment, index) => {
+
+                            return (
+                              <tr
+                                key={
+                                  payment.id ||
+                                  `payment-${index}`
+                                }
+                              >
+
+                                <td>
+                                  {formatDate(
+                                    getPaymentDate(
+                                      payment
+                                    )
+                                  )}
+                                </td>
+
+                                <td>
+                                  {payment.invoice_no ||
+                                    payment.sale?.invoice_no ||
+                                    "-"}
+                                </td>
+
+                                <td className="text-success fw-semibold">
+                                  TZS{" "}
+                                  {formatMoney(
+                                    getPaymentAmount(
+                                      payment
+                                    )
+                                  )}
+                                </td>
+
+                                <td>
+                                  {getPaymentMethod(
                                     payment
-                                  )
-                                )}
-                              </td>
+                                  )}
+                                </td>
 
-                              <td className="text-success fw-semibold">
-                                TZS{" "}
-                                {formatMoney(
-                                  getPaymentAmount(
-                                    payment
-                                  )
-                                )}
-                              </td>
+                                <td>
+                                  {payment.reference ||
+                                    payment.transaction_reference ||
+                                    payment.receipt_number ||
+                                    "-"}
+                                </td>
 
-                              <td>
-                                {getPaymentMethod(
-                                  payment
-                                )}
-                              </td>
-
-                              <td>
-                                {payment.reference ||
-                                  payment.transaction_reference ||
-                                  payment.receipt_number ||
-                                  "-"}
-                              </td>
-                            </tr>
-                          )
+                              </tr>
+                            );
+                          }
                         )
                       )}
+
                     </tbody>
                   </table>
                 </div>
@@ -1051,6 +1266,7 @@ export default function Customers() {
           {/* SUMMARY */}
 
           <div className="row g-3 mb-4">
+
             <div className="col-md-6">
               <div className="form-card h-100">
                 <small className="text-muted">
@@ -1075,13 +1291,16 @@ export default function Customers() {
                 </h4>
               </div>
             </div>
+
           </div>
 
           {/* ADD / EDIT FORM */}
 
           {showForm && (
             <div className="form-card mb-4">
+
               <div className="d-flex justify-content-between align-items-center mb-3">
+
                 <h5 className="mb-0">
                   {editingId
                     ? "Edit Customer"
@@ -1096,10 +1315,13 @@ export default function Customers() {
                   <i className="bi bi-x-lg me-1"></i>
                   Cancel
                 </button>
+
               </div>
 
               <form onSubmit={save}>
+
                 <div className="row g-3">
+
                   {/* NAME */}
 
                   <div className="col-md-4">
@@ -1152,33 +1374,10 @@ export default function Customers() {
                     />
                   </div>
 
-                  {/* BALANCE */}
-
-                  <div className="col-md-4">
-                    <label className="form-label">
-                      Opening Balance (TZS)
-                    </label>
-
-                    <input
-                      type="number"
-                      name="balance"
-                      className="form-control"
-                      min="0"
-                      step="0.01"
-                      value={form.balance}
-                      onChange={handleChange}
-                      placeholder="0"
-                    />
-
-                    <small className="text-muted">
-                      Leave 0 if the customer has no
-                      outstanding balance.
-                    </small>
-                  </div>
-
                   {/* BUTTONS */}
 
                   <div className="col-12">
+
                     <button
                       type="submit"
                       className="btn btn-success me-2"
@@ -1207,7 +1406,9 @@ export default function Customers() {
                     >
                       Cancel
                     </button>
+
                   </div>
+
                 </div>
               </form>
             </div>
@@ -1216,7 +1417,9 @@ export default function Customers() {
           {/* CUSTOMERS TABLE */}
 
           <div className="table-card">
+
             <div className="d-flex justify-content-between align-items-center p-3">
+
               <div>
                 <h5 className="mb-1">
                   Customer Records
@@ -1237,6 +1440,7 @@ export default function Customers() {
                 }}
               >
                 <div className="input-group">
+
                   <span className="input-group-text">
                     <i className="bi bi-search"></i>
                   </span>
@@ -1250,12 +1454,16 @@ export default function Customers() {
                       setSearch(e.target.value)
                     }
                   />
+
                 </div>
               </div>
+
             </div>
 
             <div className="table-responsive">
+
               <table className="table align-middle mb-0">
+
                 <thead>
                   <tr>
                     <th>Customer</th>
@@ -1267,6 +1475,7 @@ export default function Customers() {
                 </thead>
 
                 <tbody>
+
                   {loading ? (
                     <tr>
                       <td
@@ -1280,8 +1489,7 @@ export default function Customers() {
                         </div>
                       </td>
                     </tr>
-                  ) : filteredCustomers.length ===
-                    0 ? (
+                  ) : filteredCustomers.length === 0 ? (
                     <tr>
                       <td
                         colSpan="5"
@@ -1297,15 +1505,16 @@ export default function Customers() {
                   ) : (
                     filteredCustomers.map(
                       (customer) => {
-                        const balance = Number(
-                          customer.balance || 0
-                        );
+
+                        const balance =
+                          getCustomerBalance(
+                            customer
+                          );
 
                         return (
-                          <tr
-                            key={customer.id}
-                          >
-                            {/* CUSTOMER NAME */}
+                          <tr key={customer.id}>
+
+                            {/* CUSTOMER */}
 
                             <td>
                               <button
@@ -1352,6 +1561,7 @@ export default function Customers() {
 
                             <td>
                               <div className="d-flex gap-1">
+
                                 {/* VIEW */}
 
                                 <button
@@ -1405,13 +1615,16 @@ export default function Customers() {
                                     <i className="bi bi-trash"></i>
                                   )}
                                 </button>
+
                               </div>
                             </td>
+
                           </tr>
                         );
                       }
                     )
                   )}
+
                 </tbody>
               </table>
             </div>
@@ -1421,3 +1634,4 @@ export default function Customers() {
     </>
   );
 }
+
