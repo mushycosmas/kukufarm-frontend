@@ -26,7 +26,7 @@ import EggProduction from "./pages/EggProduction";
 import EggInventory from "./pages/egg-inventory/EggInventory";
 
 // Feed
-import FeedManagement from "./pages/FeedManagement";
+import FeedManagement from "./pages/feed/FeedManagement";
 
 // Health
 import HealthManagement from "./pages/HealthManagement";

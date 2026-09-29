@@ -7,10 +7,9 @@ const today = new Date().toISOString().slice(0, 10);
 const emptyForm = {
   date: today,
   feed: "",
-  supplier: "",
+  movement_type: "Stock In",
   flock: "",
   quantity: "",
-  unit_cost: "",
   reference: "",
   notes: "",
 };
@@ -37,6 +36,40 @@ function formatNumber(value) {
   });
 }
 
+function getErrorMessage(err) {
+  const data = err?.response?.data;
+
+  if (!data) {
+    return err?.message || "Operation failed.";
+  }
+
+  if (typeof data === "string") {
+    return data;
+  }
+
+  if (data.detail) {
+    return data.detail;
+  }
+
+  const firstKey = Object.keys(data)[0];
+
+  if (firstKey) {
+    const value = data[firstKey];
+
+    if (Array.isArray(value)) {
+      return value.join(", ");
+    }
+
+    if (typeof value === "object") {
+      return JSON.stringify(value);
+    }
+
+    return String(value);
+  }
+
+  return "Operation failed.";
+}
+
 function ConfirmModal({
   show,
   title,
@@ -45,7 +78,9 @@ function ConfirmModal({
   onCancel,
   loading,
 }) {
-  if (!show) return null;
+  if (!show) {
+    return null;
+  }
 
   return (
     <>
@@ -105,12 +140,8 @@ function ConfirmModal({
 export default function FeedManagement() {
   const [feeds, setFeeds] = useState([]);
   const [stock, setStock] = useState([]);
-  const [purchases, setPurchases] = useState([]);
   const [consumptions, setConsumptions] = useState([]);
-  const [suppliers, setSuppliers] = useState([]);
   const [flocks, setFlocks] = useState([]);
-
-  const [type, setType] = useState("Consumption");
 
   const [form, setForm] = useState(emptyForm);
 
@@ -123,6 +154,8 @@ export default function FeedManagement() {
   const [error, setError] = useState("");
 
   const [search, setSearch] = useState("");
+
+  const [activeTab, setActiveTab] = useState("inventory");
 
   const [confirm, setConfirm] = useState({
     show: false,
@@ -142,78 +175,63 @@ export default function FeedManagement() {
       const [
         feedsResponse,
         stockResponse,
-        purchasesResponse,
         consumptionResponse,
-        suppliersResponse,
         flocksResponse,
       ] = await Promise.all([
         api.get("/feed/feeds/"),
         api.get("/feed/stock/"),
-        api.get("/feed/purchases/"),
         api.get("/feed/consumption/"),
-        api.get("/suppliers/"),
         api.get("/flocks/"),
       ]);
 
       setFeeds(normalizeList(feedsResponse));
       setStock(normalizeList(stockResponse));
-      setPurchases(normalizeList(purchasesResponse));
       setConsumptions(normalizeList(consumptionResponse));
-      setSuppliers(normalizeList(suppliersResponse));
       setFlocks(normalizeList(flocksResponse));
     } catch (err) {
       console.error(err);
-
-      setError(
-        err?.response?.data?.detail ||
-          "Failed to load feed management data."
-      );
+      setError(getErrorMessage(err));
     } finally {
       setLoading(false);
     }
   }
 
   function resetForm() {
-    setForm(emptyForm);
+    setForm({
+      ...emptyForm,
+      date: new Date().toISOString().slice(0, 10),
+    });
+
     setEditing(null);
-    setType("Consumption");
   }
 
-  function getErrorMessage(err) {
-    const data = err?.response?.data;
-
-    if (!data) {
-      return "Operation failed.";
-    }
-
-    if (typeof data === "string") {
-      return data;
-    }
-
-    if (data.detail) {
-      return data.detail;
-    }
-
-    const firstKey = Object.keys(data)[0];
-
-    if (firstKey) {
-      const value = data[firstKey];
-
-      if (Array.isArray(value)) {
-        return value.join(", ");
-      }
-
-      return String(value);
-    }
-
-    return "Operation failed.";
+  function updateForm(field, value) {
+    setForm((previous) => ({
+      ...previous,
+      [field]: value,
+    }));
   }
 
-  function calculateTotal() {
-    const quantity = Number(form.quantity) || 0;
-    const unitCost = Number(form.unit_cost) || 0;
+  function openAddStock() {
+    resetForm();
 
-    return quantity * unitCost;
+    setForm((previous) => ({
+      ...previous,
+      movement_type: "Stock In",
+    }));
+
+    setActiveTab("stock");
+  }
+
+  function openConsumption() {
+    resetForm();
+
+    setForm((previous) => ({
+      ...previous,
+      movement_type: "Consumption",
+    }));
+
+    setActiveTab("stock");
   }
 
   async function saveMovement(e) {
@@ -231,9 +249,17 @@ export default function FeedManagement() {
         throw new Error("Quantity must be greater than zero.");
       }
 
-      if (type === "Consumption") {
+      /*
+       * CONSUMPTION / STOCK OUT
+       *
+       * Consumption belongs to the flock.
+       * Backend should reduce feed stock automatically.
+       */
+      if (form.movement_type === "Consumption") {
         if (!form.flock) {
-          throw new Error("Please select a flock.");
+          throw new Error(
+            "Please select the flock receiving the feed."
+          );
         }
 
         const payload = {
@@ -255,78 +281,72 @@ export default function FeedManagement() {
             payload
           );
         }
-      } else {
+      }
+
+      /*
+       * STOCK IN / OPENING STOCK / ADJUSTMENT
+       *
+       * These are inventory movements only.
+       *
+       * There is NO supplier.
+       * There is NO unit cost.
+       * There is NO purchase expense here.
+       */
+      else {
         const payload = {
           feed: Number(form.feed),
-          supplier: form.supplier
-            ? Number(form.supplier)
-            : null,
           date: form.date,
           quantity: Number(form.quantity),
-          unit_cost: Number(form.unit_cost) || 0,
+          movement_type: form.movement_type,
           reference: form.reference || "",
+          notes: form.notes || "",
         };
 
         if (editing) {
           await api.patch(
-            `/feed/purchases/${editing.id}/`,
+            `/feed/stock/${editing.id}/`,
             payload
           );
         } else {
           await api.post(
-            "/feed/purchases/",
+            "/feed/stock/",
             payload
           );
         }
       }
 
       resetForm();
-
       await loadData();
     } catch (err) {
       console.error(err);
-
-      if (err.message && !err.response) {
-        setError(err.message);
-      } else {
-        setError(getErrorMessage(err));
-      }
+      setError(getErrorMessage(err));
     } finally {
       setSaving(false);
     }
   }
 
   function startEdit(item, movementType) {
-    setType(movementType);
+    const type =
+      movementType === "Consumption"
+        ? "Consumption"
+        : item.movement_type || "Stock In";
 
-    if (movementType === "Consumption") {
-      setForm({
-        date: item.date || today,
-        feed: item.feed || "",
-        supplier: "",
-        flock: item.flock || "",
-        quantity: item.quantity || "",
-        unit_cost: "",
-        reference: "",
-        notes: item.notes || "",
-      });
-    } else {
-      setForm({
-        date: item.date || today,
-        feed: item.feed || "",
-        supplier: item.supplier || "",
-        flock: "",
-        quantity: item.quantity || "",
-        unit_cost: item.unit_cost || "",
-        reference: item.reference || "",
-        notes: "",
-      });
-    }
+    setForm({
+      date: item.date || today,
+      feed: item.feed || "",
+      movement_type: type,
+      flock: item.flock || "",
+      quantity: item.quantity || "",
+      reference: item.reference || "",
+      notes: item.notes || "",
+    });
 
     setEditing({
       id: item.id,
-      type: movementType,
+      type,
     });
+
+    setActiveTab("stock");
 
     window.scrollTo({
       top: 0,
@@ -343,16 +363,21 @@ export default function FeedManagement() {
   }
 
   async function confirmDelete() {
-    if (!confirm.item) return;
+    if (!confirm.item) {
+      return;
+    }
 
     try {
       setDeleting(true);
       setError("");
 
-      const endpoint =
-        confirm.type === "Consumption"
-          ? `/feed/consumption/${confirm.item.id}/`
-          : `/feed/purchases/${confirm.item.id}/`;
+      let endpoint = "";
+
+      if (confirm.type === "Consumption") {
+        endpoint = `/feed/consumption/${confirm.item.id}/`;
+      } else {
+        endpoint = `/feed/stock/${confirm.item.id}/`;
+      }
 
       await api.delete(endpoint);
 
@@ -371,41 +396,73 @@ export default function FeedManagement() {
     }
   }
 
-  const filteredMovements = useMemo(() => {
+  /*
+   * STOCK MOVEMENTS
+   *
+   * Current stock endpoint represents inventory
+   * movements such as:
+   *
+   * Stock In
+   * Opening Stock
+   * Adjustment
+   */
+  const stockMovements = useMemo(() => {
+    return stock.map((item) => ({
+      ...item,
+      movement_type:
+        item.movement_type || "Stock In",
+      direction: "IN",
+    }));
+  }, [stock]);
+
+  /*
+   * COMPLETE HISTORY
+   *
+   * Combines inventory stock movements and
+   * consumption movements.
+   */
+  const movements = useMemo(() => {
     const rows = [
+      ...stockMovements,
+
       ...consumptions.map((item) => ({
         ...item,
         movement_type: "Consumption",
-      })),
-
-      ...purchases.map((item) => ({
-        ...item,
-        movement_type: "Purchase",
+        direction: "OUT",
       })),
     ];
 
     rows.sort((a, b) => {
-      const dateA = new Date(a.date || 0).getTime();
-      const dateB = new Date(b.date || 0).getTime();
+      const dateA = new Date(
+        a.date || 0
+      ).getTime();
+
+      const dateB = new Date(
+        b.date || 0
+      ).getTime();
 
       return dateB - dateA;
     });
 
+    return rows;
+  }, [stockMovements, consumptions]);
+
+  const filteredMovements = useMemo(() => {
     if (!search.trim()) {
-      return rows;
+      return movements;
     }
 
     const term = search.toLowerCase();
 
-    return rows.filter((item) => {
+    return movements.filter((item) => {
       const text = [
         item.feed_name,
         item.flock_name,
         item.flock_code,
-        item.supplier_name,
         item.reference,
         item.created_by_name,
         item.movement_type,
+        item.notes,
       ]
         .filter(Boolean)
         .join(" ")
@@ -413,15 +470,22 @@ export default function FeedManagement() {
 
       return text.includes(term);
     });
-  }, [purchases, consumptions, search]);
+  }, [movements, search]);
 
+  /*
+   * CURRENT STOCK
+   */
   const totalStock = useMemo(() => {
     return stock.reduce(
-      (sum, item) => sum + Number(item.quantity || 0),
+      (sum, item) =>
+        sum + Number(item.quantity || 0),
       0
     );
   }, [stock]);
 
+  /*
+   * LOW STOCK
+   */
   const lowStockCount = useMemo(() => {
     return stock.filter(
       (item) =>
@@ -430,36 +494,59 @@ export default function FeedManagement() {
     ).length;
   }, [stock]);
 
-  const totalPurchased = useMemo(() => {
-    return purchases.reduce(
-      (sum, item) => sum + Number(item.quantity || 0),
+  /*
+   * TOTAL STOCK IN
+   *
+   * This is physical quantity received/added,
+   * not financial purchase value.
+   */
+  const totalStockIn = useMemo(() => {
+    return stockMovements.reduce(
+      (sum, item) =>
+        sum + Number(item.quantity || 0),
       0
     );
-  }, [purchases]);
+  }, [stockMovements]);
 
+  /*
+   * TOTAL CONSUMED
+   */
   const totalConsumed = useMemo(() => {
     return consumptions.reduce(
-      (sum, item) => sum + Number(item.quantity || 0),
+      (sum, item) =>
+        sum + Number(item.quantity || 0),
       0
     );
   }, [consumptions]);
 
   const selectedFeed = feeds.find(
-    (item) => Number(item.id) === Number(form.feed)
+    (item) =>
+      Number(item.id) ===
+      Number(form.feed)
   );
 
   return (
     <>
       <PageHeader
         title="Feed Management"
-        subtitle="Track feed purchases, stock and consumption."
+        subtitle="Manage feed inventory, stock movements and feed consumption."
       />
 
       {error && (
-        <div className="alert alert-danger">
-          {error}
+        <div className="alert alert-danger d-flex justify-content-between align-items-center">
+          <span>{error}</span>
+
+          <button
+            type="button"
+            className="btn-close"
+            onClick={() => setError("")}
+          />
         </div>
       )}
+
+      {/* =========================
+          SUMMARY
+      ========================== */}
 
       <div className="row g-3 mb-4">
         <div className="col-md-3">
@@ -472,6 +559,10 @@ export default function FeedManagement() {
               <h3 className="mb-0 mt-2">
                 {feeds.length}
               </h3>
+
+              <small className="text-muted">
+                Active feed types
+              </small>
             </div>
           </div>
         </div>
@@ -486,6 +577,10 @@ export default function FeedManagement() {
               <h3 className="mb-0 mt-2">
                 {formatNumber(totalStock)}
               </h3>
+
+              <small className="text-muted">
+                Across all feed items
+              </small>
             </div>
           </div>
         </div>
@@ -494,12 +589,16 @@ export default function FeedManagement() {
           <div className="card border-0 shadow-sm h-100">
             <div className="card-body">
               <small className="text-muted">
-                Total Purchased
+                Stock Added
               </small>
 
               <h3 className="mb-0 mt-2">
-                {formatNumber(totalPurchased)}
+                {formatNumber(totalStockIn)}
               </h3>
+
+              <small className="text-muted">
+                Total quantity added
+              </small>
             </div>
           </div>
         </div>
@@ -508,25 +607,284 @@ export default function FeedManagement() {
           <div className="card border-0 shadow-sm h-100">
             <div className="card-body">
               <small className="text-muted">
-                Low Stock Items
+                Low Stock
               </small>
 
               <h3 className="mb-0 mt-2 text-warning">
                 {lowStockCount}
               </h3>
+
+              <small className="text-muted">
+                Items requiring attention
+              </small>
             </div>
           </div>
         </div>
       </div>
 
-      <div className="two-column">
+      {/* =========================
+          TABS
+      ========================== */}
+
+      <div className="card border-0 shadow-sm mb-4">
+        <div className="card-body pb-0">
+          <ul className="nav nav-tabs">
+            <li className="nav-item">
+              <button
+                type="button"
+                className={`nav-link ${
+                  activeTab === "inventory"
+                    ? "active"
+                    : ""
+                }`}
+                onClick={() =>
+                  setActiveTab("inventory")
+                }
+              >
+                <i className="bi bi-box-seam me-2" />
+                Feed Inventory
+              </button>
+            </li>
+
+            <li className="nav-item">
+              <button
+                type="button"
+                className={`nav-link ${
+                  activeTab === "stock"
+                    ? "active"
+                    : ""
+                }`}
+                onClick={openAddStock}
+              >
+                <i className="bi bi-plus-circle me-2" />
+                Add Stock
+              </button>
+            </li>
+
+            <li className="nav-item">
+              <button
+                type="button"
+                className={`nav-link ${
+                  activeTab === "history"
+                    ? "active"
+                    : ""
+                }`}
+                onClick={() =>
+                  setActiveTab("history")
+                }
+              >
+                <i className="bi bi-clock-history me-2" />
+                Stock History
+              </button>
+            </li>
+          </ul>
+        </div>
+      </div>
+
+      {/* =========================
+          INVENTORY
+      ========================== */}
+
+      {activeTab === "inventory" && (
+        <div className="table-card">
+          <div className="p-4 pb-2">
+            <div className="d-flex justify-content-between align-items-center">
+              <div>
+                <h5 className="mb-1">
+                  Feed Inventory
+                </h5>
+
+                <small className="text-muted">
+                  Current available physical feed stock.
+                </small>
+              </div>
+
+              <div className="d-flex gap-2">
+                <button
+                  type="button"
+                  className="btn btn-outline-primary"
+                  onClick={openConsumption}
+                >
+                  <i className="bi bi-dash-circle me-2" />
+                  Record Consumption
+                </button>
+
+                <button
+                  type="button"
+                  className="btn btn-success"
+                  onClick={openAddStock}
+                >
+                  <i className="bi bi-plus-lg me-2" />
+                  Add Stock
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <div className="table-responsive">
+            <table className="table align-middle mb-0">
+              <thead>
+                <tr>
+                  <th>Feed</th>
+                  <th>Category</th>
+                  <th>Available Stock</th>
+                  <th>Minimum Stock</th>
+                  <th>Unit</th>
+                  <th>Status</th>
+                  <th>Action</th>
+                </tr>
+              </thead>
+
+              <tbody>
+                {loading ? (
+                  <tr>
+                    <td
+                      colSpan="7"
+                      className="text-center py-4"
+                    >
+                      Loading inventory...
+                    </td>
+                  </tr>
+                ) : stock.length === 0 ? (
+                  <tr>
+                    <td
+                      colSpan="7"
+                      className="text-center text-muted py-4"
+                    >
+                      No feed inventory found.
+                    </td>
+                  </tr>
+                ) : (
+                  stock.map((item) => (
+                    <tr key={item.id}>
+                      <td>
+                        <strong>
+                          {item.feed_name || "-"}
+                        </strong>
+                      </td>
+
+                      <td>
+                        {item.category_name || "-"}
+                      </td>
+
+                      <td>
+                        <strong>
+                          {formatNumber(
+                            item.quantity
+                          )}
+                        </strong>
+                      </td>
+
+                      <td>
+                        {formatNumber(
+                          item.minimum_stock
+                        )}
+                      </td>
+
+                      <td>
+                        {item.unit || "-"}
+                      </td>
+
+                      <td>
+                        {item.stock_status ===
+                        "out_of_stock" ? (
+                          <span className="badge bg-danger">
+                            Out of Stock
+                          </span>
+                        ) : item.stock_status ===
+                          "low_stock" ? (
+                          <span className="badge bg-warning text-dark">
+                            Low Stock
+                          </span>
+                        ) : (
+                          <span className="badge bg-success">
+                            Normal
+                          </span>
+                        )}
+                      </td>
+
+                      <td>
+                        <div className="d-flex gap-2">
+                          <button
+                            type="button"
+                            className="btn btn-sm btn-outline-success"
+                            onClick={() => {
+                              resetForm();
+
+                              setForm((previous) => ({
+                                ...previous,
+                                feed:
+                                  item.feed ||
+                                  item.feed_id ||
+                                  "",
+                                movement_type:
+                                  "Stock In",
+                              }));
+
+                              setActiveTab("stock");
+                            }}
+                          >
+                            <i className="bi bi-plus-lg me-1" />
+                            Stock In
+                          </button>
+
+                          <button
+                            type="button"
+                            className="btn btn-sm btn-outline-primary"
+                            onClick={() => {
+                              resetForm();
+
+                              setForm((previous) => ({
+                                ...previous,
+                                feed:
+                                  item.feed ||
+                                  item.feed_id ||
+                                  "",
+                                movement_type:
+                                  "Consumption",
+                              }));
+
+                              setActiveTab("stock");
+                            }}
+                          >
+                            <i className="bi bi-dash-lg me-1" />
+                            Use
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* =========================
+          STOCK FORM
+      ========================== */}
+
+      {activeTab === "stock" && (
         <div className="form-card">
-          <div className="d-flex justify-content-between align-items-center mb-3">
-            <h5 className="mb-0">
-              {editing
-                ? `Edit ${type}`
-                : "Record Feed Movement"}
-            </h5>
+          <div className="d-flex justify-content-between align-items-center mb-4">
+            <div>
+              <h5 className="mb-1">
+                {editing
+                  ? "Edit Stock Movement"
+                  : form.movement_type ===
+                    "Consumption"
+                  ? "Record Feed Consumption"
+                  : "Add Feed Stock"}
+              </h5>
+
+              <small className="text-muted">
+                {form.movement_type ===
+                "Consumption"
+                  ? "Record feed used by a flock. The available stock will be reduced."
+                  : "Add physical feed quantity to the inventory. Purchase costs are managed separately in Expenses."}
+              </small>
+            </div>
 
             {editing && (
               <button
@@ -542,7 +900,8 @@ export default function FeedManagement() {
           <form onSubmit={saveMovement}>
             <div className="row g-3">
 
-              <div className="col-md-6">
+              {/* DATE */}
+              <div className="col-md-4">
                 <label className="form-label">
                   Date
                 </label>
@@ -552,52 +911,72 @@ export default function FeedManagement() {
                   className="form-control"
                   value={form.date}
                   onChange={(e) =>
-                    setForm({
-                      ...form,
-                      date: e.target.value,
-                    })
+                    updateForm(
+                      "date",
+                      e.target.value
+                    )
                   }
                   required
                 />
               </div>
 
-              <div className="col-md-6">
+              {/* MOVEMENT TYPE */}
+              <div className="col-md-4">
                 <label className="form-label">
-                  Type
+                  Movement Type
                 </label>
 
                 <select
                   className="form-select"
-                  value={type}
+                  value={form.movement_type}
                   disabled={!!editing}
                   onChange={(e) => {
-                    setType(e.target.value);
-                    setForm(emptyForm);
+                    const value =
+                      e.target.value;
+
+                    setForm((previous) => ({
+                      ...previous,
+                      movement_type: value,
+                      flock:
+                        value ===
+                        "Consumption"
+                          ? previous.flock
+                          : "",
+                    }));
                   }}
                 >
-                  <option value="Consumption">
-                    Consumption
+                  <option value="Stock In">
+                    Stock In
                   </option>
 
-                  <option value="Purchase">
-                    Purchase
+                  <option value="Opening Stock">
+                    Opening Stock
+                  </option>
+
+                  <option value="Adjustment">
+                    Adjustment
+                  </option>
+
+                  <option value="Consumption">
+                    Consumption / Stock Out
                   </option>
                 </select>
               </div>
 
-              <div className="col-md-6">
+              {/* FEED */}
+              <div className="col-md-4">
                 <label className="form-label">
-                  Feed Item
+                  Feed
                 </label>
 
                 <select
                   className="form-select"
                   value={form.feed}
                   onChange={(e) =>
-                    setForm({
-                      ...form,
-                      feed: e.target.value,
-                    })
+                    updateForm(
+                      "feed",
+                      e.target.value
+                    )
                   }
                   required
                 >
@@ -606,7 +985,13 @@ export default function FeedManagement() {
                   </option>
 
                   {feeds
-                    .filter((feed) => feed.active)
+                    .filter(
+                      (feed) =>
+                        feed.active !==
+                          false &&
+                        feed.is_active !==
+                          false
+                    )
                     .map((feed) => (
                       <option
                         key={feed.id}
@@ -621,7 +1006,9 @@ export default function FeedManagement() {
                 </select>
               </div>
 
-              {type === "Consumption" ? (
+              {/* FLOCK */}
+              {form.movement_type ===
+                "Consumption" && (
                 <div className="col-md-6">
                   <label className="form-label">
                     Flock
@@ -631,10 +1018,10 @@ export default function FeedManagement() {
                     className="form-select"
                     value={form.flock}
                     onChange={(e) =>
-                      setForm({
-                        ...form,
-                        flock: e.target.value,
-                      })
+                      updateForm(
+                        "flock",
+                        e.target.value
+                      )
                     }
                     required
                   >
@@ -647,44 +1034,25 @@ export default function FeedManagement() {
                         key={flock.id}
                         value={flock.id}
                       >
-                        {flock.code} - {flock.name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              ) : (
-                <div className="col-md-6">
-                  <label className="form-label">
-                    Supplier
-                  </label>
-
-                  <select
-                    className="form-select"
-                    value={form.supplier}
-                    onChange={(e) =>
-                      setForm({
-                        ...form,
-                        supplier: e.target.value,
-                      })
-                    }
-                  >
-                    <option value="">
-                      Select Supplier
-                    </option>
-
-                    {suppliers.map((supplier) => (
-                      <option
-                        key={supplier.id}
-                        value={supplier.id}
-                      >
-                        {supplier.name}
+                        {flock.code
+                          ? `${flock.code} - `
+                          : ""}
+                        {flock.name}
                       </option>
                     ))}
                   </select>
                 </div>
               )}
 
-              <div className="col-md-6">
+              {/* QUANTITY */}
+              <div
+                className={
+                  form.movement_type ===
+                  "Consumption"
+                    ? "col-md-6"
+                    : "col-md-6"
+                }
+              >
                 <label className="form-label">
                   Quantity
                   {selectedFeed?.unit
@@ -699,336 +1067,391 @@ export default function FeedManagement() {
                   className="form-control"
                   value={form.quantity}
                   onChange={(e) =>
-                    setForm({
-                      ...form,
-                      quantity: e.target.value,
-                    })
+                    updateForm(
+                      "quantity",
+                      e.target.value
+                    )
                   }
                   required
                 />
+
+                {form.movement_type ===
+                  "Consumption" && (
+                  <small className="text-muted">
+                    This quantity will be deducted
+                    from the current feed stock.
+                  </small>
+                )}
               </div>
 
-              {type === "Purchase" && (
-                <>
-                  <div className="col-md-6">
-                    <label className="form-label">
-                      Unit Cost
-                    </label>
+              {/* REFERENCE */}
+              <div className="col-md-6">
+                <label className="form-label">
+                  Reference
+                </label>
 
-                    <input
-                      type="number"
-                      min="0"
-                      step="0.01"
-                      className="form-control"
-                      value={form.unit_cost}
-                      onChange={(e) =>
-                        setForm({
-                          ...form,
-                          unit_cost: e.target.value,
-                        })
-                      }
-                      required
-                    />
-                  </div>
+                <input
+                  type="text"
+                  className="form-control"
+                  value={form.reference}
+                  onChange={(e) =>
+                    updateForm(
+                      "reference",
+                      e.target.value
+                    )
+                  }
+                  placeholder={
+                    form.movement_type ===
+                    "Consumption"
+                      ? "Optional reference"
+                      : "GRN / delivery / stock reference"
+                  }
+                />
+              </div>
 
-                  <div className="col-md-6">
-                    <label className="form-label">
-                      Reference
-                    </label>
+              {/* NOTES */}
+              <div className="col-12">
+                <label className="form-label">
+                  Notes
+                </label>
 
-                    <input
-                      type="text"
-                      className="form-control"
-                      value={form.reference}
-                      onChange={(e) =>
-                        setForm({
-                          ...form,
-                          reference: e.target.value,
-                        })
-                      }
-                      placeholder="Invoice / receipt number"
-                    />
-                  </div>
+                <textarea
+                  className="form-control"
+                  rows="3"
+                  value={form.notes}
+                  onChange={(e) =>
+                    updateForm(
+                      "notes",
+                      e.target.value
+                    )
+                  }
+                  placeholder={
+                    form.movement_type ===
+                    "Consumption"
+                      ? "Example: Morning feeding"
+                      : "Example: Feed received and added to store"
+                  }
+                />
+              </div>
 
-                  <div className="col-12">
-                    <div className="alert alert-light border mb-0">
-                      <strong>
-                        Total:
-                      </strong>{" "}
-                      {formatNumber(
-                        calculateTotal()
-                      )}
-                    </div>
-                  </div>
-                </>
-              )}
-
-              {type === "Consumption" && (
+              {/* STOCK IN INFORMATION */}
+              {form.movement_type ===
+                "Stock In" && (
                 <div className="col-12">
-                  <label className="form-label">
-                    Notes
-                  </label>
-
-                  <textarea
-                    className="form-control"
-                    rows="3"
-                    value={form.notes}
-                    onChange={(e) =>
-                      setForm({
-                        ...form,
-                        notes: e.target.value,
-                      })
-                    }
-                    placeholder="Optional notes..."
-                  />
+                  <div className="alert alert-success mb-0">
+                    <strong>Stock In</strong>
+                    <br />
+                    This adds the specified quantity
+                    to the feed inventory.
+                    <br />
+                    <small>
+                      Purchase cost should be recorded
+                      separately under Expenses/Purchases.
+                    </small>
+                  </div>
                 </div>
               )}
 
+              {/* OPENING STOCK INFORMATION */}
+              {form.movement_type ===
+                "Opening Stock" && (
+                <div className="col-12">
+                  <div className="alert alert-info mb-0">
+                    <strong>
+                      Opening Stock
+                    </strong>
+                    <br />
+                    Use this when entering the existing
+                    physical feed balance into the system
+                    for the first time.
+                  </div>
+                </div>
+              )}
+
+              {/* ADJUSTMENT INFORMATION */}
+              {form.movement_type ===
+                "Adjustment" && (
+                <div className="col-12">
+                  <div className="alert alert-warning mb-0">
+                    <strong>
+                      Stock Adjustment
+                    </strong>
+                    <br />
+                    Use this when the physical stock
+                    differs from the system balance.
+                    <br />
+                    <small>
+                      Add a note explaining the reason
+                      for the adjustment.
+                    </small>
+                  </div>
+                </div>
+              )}
+
+              {/* CONSUMPTION INFORMATION */}
+              {form.movement_type ===
+                "Consumption" && (
+                <div className="col-12">
+                  <div className="alert alert-primary mb-0">
+                    <strong>
+                      Feed Consumption
+                    </strong>
+                    <br />
+                    This records feed used by the
+                    selected flock and reduces the
+                    available inventory.
+                  </div>
+                </div>
+              )}
+
+              {/* BUTTONS */}
               <div className="col-12">
-                <button
-                  type="submit"
-                  className="btn btn-success"
-                  disabled={saving || loading}
-                >
-                  {saving
-                    ? "Saving..."
-                    : editing
-                    ? "Update Movement"
-                    : "Save Movement"}
-                </button>
+                <div className="d-flex gap-2">
+                  <button
+                    type="submit"
+                    className="btn btn-success"
+                    disabled={
+                      saving || loading
+                    }
+                  >
+                    {saving
+                      ? "Saving..."
+                      : editing
+                      ? "Update Movement"
+                      : form.movement_type ===
+                        "Consumption"
+                      ? "Record Consumption"
+                      : "Add Stock"}
+                  </button>
+
+                  {editing && (
+                    <button
+                      type="button"
+                      className="btn btn-outline-secondary"
+                      onClick={resetForm}
+                      disabled={saving}
+                    >
+                      Cancel
+                    </button>
+                  )}
+                </div>
               </div>
             </div>
           </form>
         </div>
+      )}
 
-        <div className="table-card p-4">
-          <div className="d-flex justify-content-between align-items-center mb-3">
-            <h5 className="mb-0">
-              Current Stock
-            </h5>
+      {/* =========================
+          HISTORY
+      ========================== */}
 
-            <span className="badge bg-secondary">
-              {stock.length} items
-            </span>
-          </div>
+      {activeTab === "history" && (
+        <div className="table-card">
+          <div className="p-4 pb-2">
+            <div className="d-flex justify-content-between align-items-center gap-3">
+              <div>
+                <h5 className="mb-1">
+                  Stock History
+                </h5>
 
-          {stock.length === 0 ? (
-            <div className="text-muted">
-              No feed stock records found.
-            </div>
-          ) : (
-            stock.map((item) => (
-              <div
-                className="stock-row d-flex justify-content-between align-items-center"
-                key={item.id}
-              >
-                <div>
-                  <strong>
-                    {item.feed_name}
-                  </strong>
-
-                  <div className="small text-muted">
-                    Minimum:{" "}
-                    {formatNumber(
-                      item.minimum_stock
-                    )}{" "}
-                    {item.unit}
-                  </div>
-                </div>
-
-                <div className="text-end">
-                  <strong>
-                    {formatNumber(item.quantity)}{" "}
-                    {item.unit}
-                  </strong>
-
-                  <div>
-                    {item.stock_status ===
-                    "out_of_stock" ? (
-                      <span className="badge bg-danger">
-                        Out of Stock
-                      </span>
-                    ) : item.stock_status ===
-                      "low_stock" ? (
-                      <span className="badge bg-warning text-dark">
-                        Low Stock
-                      </span>
-                    ) : (
-                      <span className="badge bg-success">
-                        Normal
-                      </span>
-                    )}
-                  </div>
-                </div>
+                <small className="text-muted">
+                  Complete record of feed entering
+                  and leaving inventory.
+                </small>
               </div>
-            ))
-          )}
-        </div>
-      </div>
 
-      <div className="table-card mt-4">
-        <div className="p-4 pb-2">
-          <div className="d-flex justify-content-between align-items-center gap-3">
-            <h5 className="mb-0">
-              Feed Movements
-            </h5>
-
-            <div style={{ maxWidth: "320px", width: "100%" }}>
-              <input
-                type="search"
-                className="form-control"
-                placeholder="Search movements..."
-                value={search}
-                onChange={(e) =>
-                  setSearch(e.target.value)
-                }
-              />
+              <div
+                style={{
+                  maxWidth: "320px",
+                  width: "100%",
+                }}
+              >
+                <input
+                  type="search"
+                  className="form-control"
+                  placeholder="Search history..."
+                  value={search}
+                  onChange={(e) =>
+                    setSearch(
+                      e.target.value
+                    )
+                  }
+                />
+              </div>
             </div>
           </div>
-        </div>
 
-        <div className="table-responsive">
-          <table className="table align-middle mb-0">
-            <thead>
-              <tr>
-                <th>Date</th>
-                <th>Item</th>
-                <th>Type</th>
-                <th>Quantity</th>
-                <th>Flock</th>
-                <th>Supplier</th>
-                <th>Created By</th>
-                <th>Action</th>
-              </tr>
-            </thead>
-
-            <tbody>
-              {loading ? (
+          <div className="table-responsive">
+            <table className="table align-middle mb-0">
+              <thead>
                 <tr>
-                  <td
-                    colSpan="8"
-                    className="text-center py-4"
-                  >
-                    Loading...
-                  </td>
+                  <th>Date</th>
+                  <th>Feed</th>
+                  <th>Type</th>
+                  <th>Quantity</th>
+                  <th>Flock</th>
+                  <th>Reference</th>
+                  <th>Created By</th>
+                  <th>Action</th>
                 </tr>
-              ) : filteredMovements.length === 0 ? (
-                <tr>
-                  <td
-                    colSpan="8"
-                    className="text-center text-muted py-4"
-                  >
-                    No feed movements found.
-                  </td>
-                </tr>
-              ) : (
-                filteredMovements.map((item) => (
-                  <tr key={`${item.movement_type}-${item.id}`}>
-                    <td>
-                      {item.date}
-                    </td>
+              </thead>
 
-                    <td>
-                      <strong>
-                        {item.feed_name ||
-                          "-"}
-                      </strong>
-                    </td>
-
-                    <td>
-                      <span
-                        className={`status ${
-                          item.movement_type ===
-                          "Purchase"
-                            ? "active"
-                            : "warning"
-                        }`}
-                      >
-                        {item.movement_type}
-                      </span>
-                    </td>
-
-                    <td>
-                      {formatNumber(
-                        item.quantity
-                      )}{" "}
-                      {item.feed_unit || ""}
-                    </td>
-
-                    <td>
-                      {item.movement_type ===
-                      "Consumption"
-                        ? item.flock_code
-                          ? `${item.flock_code} - ${
-                              item.flock_name || ""
-                            }`
-                          : "-"
-                        : "-"}
-                    </td>
-
-                    <td>
-                      {item.movement_type ===
-                      "Purchase"
-                        ? item.supplier_name ||
-                          "-"
-                        : "-"}
-                    </td>
-
-                    <td>
-                      {item.created_by_name ||
-                        "-"}
-                    </td>
-
-                    <td>
-                      <div className="d-flex gap-2">
-                        <button
-                          type="button"
-                          className="btn btn-sm btn-outline-primary"
-                          title="Edit"
-                          onClick={() =>
-                            startEdit(
-                              item,
-                              item.movement_type
-                            )
-                          }
-                        >
-                          <i className="bi bi-pencil" />
-                        </button>
-
-                        <button
-                          type="button"
-                          className="btn btn-sm btn-outline-danger"
-                          title="Delete"
-                          onClick={() =>
-                            askDelete(
-                              item,
-                              item.movement_type
-                            )
-                          }
-                        >
-                          <i className="bi bi-trash" />
-                        </button>
-                      </div>
+              <tbody>
+                {loading ? (
+                  <tr>
+                    <td
+                      colSpan="8"
+                      className="text-center py-4"
+                    >
+                      Loading history...
                     </td>
                   </tr>
-                ))
-              )}
-            </tbody>
-          </table>
+                ) : filteredMovements.length ===
+                  0 ? (
+                  <tr>
+                    <td
+                      colSpan="8"
+                      className="text-center text-muted py-4"
+                    >
+                      No stock movements found.
+                    </td>
+                  </tr>
+                ) : (
+                  filteredMovements.map(
+                    (item) => (
+                      <tr
+                        key={`${item.movement_type}-${item.id}`}
+                      >
+                        <td>
+                          {item.date || "-"}
+                        </td>
+
+                        <td>
+                          <strong>
+                            {item.feed_name ||
+                              "-"}
+                          </strong>
+                        </td>
+
+                        <td>
+                          {item.movement_type ===
+                          "Consumption" ? (
+                            <span className="badge bg-warning text-dark">
+                              Stock Out
+                            </span>
+                          ) : item.movement_type ===
+                            "Adjustment" ? (
+                            <span className="badge bg-info text-dark">
+                              Adjustment
+                            </span>
+                          ) : item.movement_type ===
+                            "Opening Stock" ? (
+                            <span className="badge bg-secondary">
+                              Opening
+                            </span>
+                          ) : (
+                            <span className="badge bg-success">
+                              Stock In
+                            </span>
+                          )}
+                        </td>
+
+                        <td>
+                          <strong>
+                            {formatNumber(
+                              item.quantity
+                            )}
+                          </strong>{" "}
+                          {item.feed_unit || ""}
+                        </td>
+
+                        <td>
+                          {item.movement_type ===
+                          "Consumption"
+                            ? item.flock_code
+                              ? `${item.flock_code} - ${
+                                  item.flock_name ||
+                                  ""
+                                }`
+                              : item.flock_name ||
+                                "-"
+                            : "-"}
+                        </td>
+
+                        <td>
+                          {item.reference ||
+                            "-"}
+                        </td>
+
+                        <td>
+                          {item.created_by_name ||
+                            "-"}
+                        </td>
+
+                        <td>
+                          <div className="d-flex gap-2">
+                            <button
+                              type="button"
+                              className="btn btn-sm btn-outline-primary"
+                              title="Edit"
+                              onClick={() =>
+                                startEdit(
+                                  item,
+                                  item.movement_type
+                                )
+                              }
+                            >
+                              <i className="bi bi-pencil" />
+                            </button>
+
+                            <button
+                              type="button"
+                              className="btn btn-sm btn-outline-danger"
+                              title="Delete"
+                              onClick={() =>
+                                askDelete(
+                                  item,
+                                  item.movement_type
+                                )
+                              }
+                            >
+                              <i className="bi bi-trash" />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    )
+                  )
+                )}
+              </tbody>
+            </table>
+          </div>
         </div>
-      </div>
+      )}
+
+      {/* =========================
+          FOOTER SUMMARY
+      ========================== */}
 
       <div className="mt-3 text-muted small">
-        Total consumed:{" "}
+        Total feed consumed:{" "}
         <strong>
           {formatNumber(totalConsumed)}
         </strong>
       </div>
 
+      {/* =========================
+          DELETE CONFIRMATION
+      ========================== */}
+
       <ConfirmModal
         show={confirm.show}
         title="Delete Feed Movement"
-        message="Are you sure you want to delete this feed movement? Stock will be adjusted automatically."
+        message={
+          confirm.type === "Consumption"
+            ? "Are you sure you want to delete this consumption record? The backend should restore the inventory balance."
+            : "Are you sure you want to delete this stock movement? The backend should recalculate the inventory balance."
+        }
         onConfirm={confirmDelete}
         onCancel={() =>
           setConfirm({
