@@ -41,7 +41,6 @@ export default function Sales() {
   // ============================================================
 
   const [form, setForm] = useState(createInitialForm());
-
   const [editingId, setEditingId] = useState(null);
 
   // ============================================================
@@ -53,9 +52,7 @@ export default function Sales() {
   );
 
   const [paymentSale, setPaymentSale] = useState(null);
-
   const [paymentHistorySale, setPaymentHistorySale] = useState(null);
-
   const [paymentHistory, setPaymentHistory] = useState([]);
 
   // ============================================================
@@ -261,7 +258,9 @@ export default function Sales() {
 
       return {
         ...previous,
-        items: previous.items.filter((_, itemIndex) => itemIndex !== index),
+        items: previous.items.filter(
+          (_, itemIndex) => itemIndex !== index
+        ),
       };
     });
   };
@@ -296,7 +295,10 @@ export default function Sales() {
   }, [form.items]);
 
   const remainingEggStock = useMemo(() => {
-    return Math.max(0, Number(eggStock || 0) - totalEggsInForm);
+    return Math.max(
+      0,
+      Number(eggStock || 0) - totalEggsInForm
+    );
   }, [eggStock, totalEggsInForm]);
 
   const hasEnoughEggStock = useMemo(() => {
@@ -304,11 +306,16 @@ export default function Sales() {
       return true;
     }
 
-    return totalEggsInForm <= Number(eggStock || 0);
+    return (
+      totalEggsInForm <= Number(eggStock || 0)
+    );
   }, [totalEggsInForm, eggStock]);
 
   const discount = useMemo(() => {
-    return Math.max(0, Number(form.discount || 0));
+    return Math.max(
+      0,
+      Number(form.discount || 0)
+    );
   }, [form.discount]);
 
   const total = useMemo(() => {
@@ -316,16 +323,120 @@ export default function Sales() {
   }, [subtotal, discount]);
 
   const amountPaid = useMemo(() => {
-    return Math.max(0, Number(form.amount_paid || 0));
+    return Math.max(
+      0,
+      Number(form.amount_paid || 0)
+    );
   }, [form.amount_paid]);
 
   const balance = useMemo(() => {
-    return Math.max(0, total - amountPaid);
+    return Math.max(
+      0,
+      total - amountPaid
+    );
   }, [total, amountPaid]);
 
   const paymentStatus = useMemo(() => {
-    return getPaymentStatus(total, amountPaid);
+    return getPaymentStatus(
+      total,
+      amountPaid
+    );
   }, [total, amountPaid]);
+
+  // ============================================================
+  // CUSTOMER HELPERS
+  // ============================================================
+
+  /**
+   * Extract a customer ID from all supported API formats.
+   *
+   * Supported:
+   * customer: 5
+   * customer: "5"
+   * customer: { id: 5, name: "Malila" }
+   */
+  const getCustomerId = (customerValue) => {
+    if (
+      customerValue === null ||
+      customerValue === undefined ||
+      customerValue === ""
+    ) {
+      return null;
+    }
+
+    if (
+      typeof customerValue === "object"
+    ) {
+      return (
+        customerValue.id ||
+        customerValue.pk ||
+        null
+      );
+    }
+
+    return customerValue;
+  };
+
+  /**
+   * Safely resolve customer name.
+   *
+   * This prevents:
+   *
+   * Customer #[object Object]
+   */
+  const getCustomerName = (customerValue) => {
+    if (
+      customerValue === null ||
+      customerValue === undefined ||
+      customerValue === ""
+    ) {
+      return "Walk-in Customer";
+    }
+
+    // ----------------------------------------------------------
+    // Customer object returned directly by API
+    // ----------------------------------------------------------
+
+    if (
+      typeof customerValue === "object"
+    ) {
+      return (
+        customerValue.name ||
+        customerValue.customer_name ||
+        customerValue.full_name ||
+        customerValue.business_name ||
+        customerValue.display_name ||
+        (
+          customerValue.id
+            ? `Customer #${customerValue.id}`
+            : "Walk-in Customer"
+        )
+      );
+    }
+
+    // ----------------------------------------------------------
+    // Customer ID returned by API
+    // ----------------------------------------------------------
+
+    const customer = customers.find(
+      (item) =>
+        String(item.id) ===
+        String(customerValue)
+    );
+
+    if (customer) {
+      return (
+        customer.name ||
+        customer.customer_name ||
+        customer.full_name ||
+        customer.business_name ||
+        customer.display_name ||
+        `Customer #${customer.id}`
+      );
+    }
+
+    return `Customer #${customerValue}`;
+  };
 
   // ============================================================
   // VALIDATE SALE FORM
@@ -357,7 +468,10 @@ export default function Sales() {
         return "Please wait while egg stock is being checked.";
       }
 
-      if (eggStockError && stockOverride === null) {
+      if (
+        eggStockError &&
+        stockOverride === null
+      ) {
         return `Cannot verify egg stock. ${eggStockError}`;
       }
 
@@ -366,7 +480,10 @@ export default function Sales() {
           ? Number(stockOverride)
           : Number(eggStock || 0);
 
-      if (totalEggsInForm > availableStock) {
+      if (
+        totalEggsInForm >
+        availableStock
+      ) {
         return `Sale cancelled. Insufficient egg stock. Available: ${availableStock.toLocaleString()} eggs. Requested: ${totalEggsInForm.toLocaleString()} eggs.`;
       }
     }
@@ -389,7 +506,11 @@ export default function Sales() {
     // ITEMS VALIDATION
     // ----------------------------------------------------------
 
-    for (let i = 0; i < form.items.length; i++) {
+    for (
+      let i = 0;
+      i < form.items.length;
+      i++
+    ) {
       const item = form.items[i];
 
       if (!item.product?.trim()) {
@@ -412,13 +533,19 @@ export default function Sales() {
         return `Unit price is required for item ${i + 1}.`;
       }
 
-      if (!["piece", "tray"].includes(item.unit)) {
+      if (
+        !["piece", "tray"].includes(
+          item.unit
+        )
+      ) {
         return `Invalid unit for item ${i + 1}.`;
       }
 
       if (
         item.unit === "tray" &&
-        !Number.isInteger(Number(item.quantity))
+        !Number.isInteger(
+          Number(item.quantity)
+        )
       ) {
         return `Tray quantity must be a whole number for item ${i + 1}.`;
       }
@@ -431,8 +558,11 @@ export default function Sales() {
   // SAVE SALE REQUEST
   // ============================================================
 
-  const saveSaleRequest = async (stockOverride = null) => {
-    const validationError = validateForm(stockOverride);
+  const saveSaleRequest = async (
+    stockOverride = null
+  ) => {
+    const validationError =
+      validateForm(stockOverride);
 
     if (validationError) {
       setError(validationError);
@@ -443,38 +573,53 @@ export default function Sales() {
       setSaving(true);
       setError("");
 
+      const customerId =
+        getCustomerId(form.customer);
+
       const payload = {
         date: form.date,
 
-        customer: form.customer
-          ? Number(form.customer)
+        customer: customerId
+          ? Number(customerId)
           : null,
 
-        payment_method: form.payment_method,
+        payment_method:
+          form.payment_method,
 
-        discount: Number(discount.toFixed(2)),
+        discount: Number(
+          discount.toFixed(2)
+        ),
 
-        notes: form.notes?.trim() || "",
+        notes:
+          form.notes?.trim() || "",
 
-        items: form.items.map((item) => ({
-          id: item.id,
+        items: form.items.map(
+          (item) => ({
+            id: item.id,
 
-          product: item.product.trim(),
+            product:
+              item.product.trim(),
 
-          is_egg: Boolean(item.is_egg),
+            is_egg:
+              Boolean(item.is_egg),
 
-          quantity: Number(item.quantity),
+            quantity:
+              Number(item.quantity),
 
-          unit: item.unit || "piece",
+            unit:
+              item.unit || "piece",
 
-          unit_price: Number(item.unit_price),
-        })),
+            unit_price:
+              Number(item.unit_price),
+          })
+        ),
       };
 
-      // Initial payment is only submitted when creating
-      // a new sale. Subsequent payments use SalePayment.
       if (!editingId) {
-        payload.amount_paid = Number(amountPaid.toFixed(2));
+        payload.amount_paid =
+          Number(
+            amountPaid.toFixed(2)
+          );
       }
 
       let response;
@@ -485,10 +630,16 @@ export default function Sales() {
           payload
         );
       } else {
-        response = await api.post("/sales/", payload);
+        response = await api.post(
+          "/sales/",
+          payload
+        );
       }
 
-      console.log("Sale saved:", response);
+      console.log(
+        "Sale saved:",
+        response
+      );
 
       showSuccess(
         editingId
@@ -505,9 +656,14 @@ export default function Sales() {
 
       return true;
     } catch (err) {
-      console.error("Failed to save sale:", err);
+      console.error(
+        "Failed to save sale:",
+        err
+      );
 
-      setError(extractError(err));
+      setError(
+        extractError(err)
+      );
 
       return false;
     } finally {
@@ -525,41 +681,45 @@ export default function Sales() {
     setError("");
     setSuccess("");
 
-    // ----------------------------------------------------------
-    // Refresh egg stock immediately before saving.
-    // This prevents using an old stock value.
-    // ----------------------------------------------------------
-
     if (totalEggsInForm > 0) {
       try {
         setSaving(true);
         setLoadingEggStock(true);
         setEggStockError("");
 
-        const response = await api.get("/egg-inventory/");
+        const response =
+          await api.get(
+            "/egg-inventory/"
+          );
 
         console.log(
           "Fresh egg inventory before sale:",
           response
         );
 
-        const latestStock = getAvailableEggStock(response);
+        const latestStock =
+          getAvailableEggStock(
+            response
+          );
 
         setEggStock(latestStock);
-
         setLoadingEggStock(false);
 
-        if (totalEggsInForm > latestStock) {
+        if (
+          totalEggsInForm >
+          latestStock
+        ) {
           setError(
             `Sale cancelled. Insufficient egg stock. Available: ${latestStock.toLocaleString()} eggs. Requested: ${totalEggsInForm.toLocaleString()} eggs.`
           );
 
           setSaving(false);
-
           return;
         }
 
-        await saveSaleRequest(latestStock);
+        await saveSaleRequest(
+          latestStock
+        );
 
         return;
       } catch (err) {
@@ -569,10 +729,14 @@ export default function Sales() {
         );
 
         setLoadingEggStock(false);
-        setEggStockError(extractError(err));
+        setEggStockError(
+          extractError(err)
+        );
 
         setError(
-          `Cannot verify egg stock. ${extractError(err)}`
+          `Cannot verify egg stock. ${extractError(
+            err
+          )}`
         );
 
         setSaving(false);
@@ -592,70 +756,105 @@ export default function Sales() {
     setError("");
     setSuccess("");
 
-    const saleItems = Array.isArray(sale.items)
-      ? sale.items
-      : [];
+    const saleItems =
+      Array.isArray(sale.items)
+        ? sale.items
+        : Array.isArray(
+            sale.sale_items
+          )
+        ? sale.sale_items
+        : [];
+
+    const customerId =
+      getCustomerId(
+        sale.customer ??
+          sale.customer_id
+      );
 
     setForm({
-      date: sale.date || getToday(),
+      date:
+        sale.date ||
+        getToday(),
 
       customer:
-        sale.customer !== null &&
-        sale.customer !== undefined
-          ? String(sale.customer)
+        customerId !== null &&
+        customerId !== undefined
+          ? String(customerId)
           : "",
 
-      invoice_no: sale.invoice_no || "",
+      invoice_no:
+        sale.invoice_no || "",
 
       payment_method:
-        sale.payment_method || "cash",
+        sale.payment_method ||
+        "cash",
 
       amount_paid:
-        sale.amount_paid !== undefined &&
-        sale.amount_paid !== null
-          ? String(sale.amount_paid)
+        sale.amount_paid !==
+          undefined &&
+        sale.amount_paid !==
+          null
+          ? String(
+              sale.amount_paid
+            )
           : "",
 
       discount:
-        sale.discount !== undefined &&
-        sale.discount !== null
-          ? String(sale.discount)
+        sale.discount !==
+          undefined &&
+        sale.discount !==
+          null
+          ? String(
+              sale.discount
+            )
           : "",
 
-      notes: sale.notes || "",
+      notes:
+        sale.notes || "",
 
       items:
         saleItems.length > 0
-          ? saleItems.map((item) => ({
-              id: item.id,
+          ? saleItems.map(
+              (item) => ({
+                id: item.id,
 
-              product:
-                item.product ||
-                item.product_name ||
-                "",
+                product:
+                  item.product ||
+                  item.product_name ||
+                  "",
 
-              is_egg:
-                Boolean(
-                  item.is_egg ??
-                  item.isEgg ??
-                  false
-                ),
+                is_egg:
+                  Boolean(
+                    item.is_egg ??
+                      item.isEgg ??
+                      false
+                  ),
 
-              quantity:
-                item.quantity !== undefined &&
-                item.quantity !== null
-                  ? String(item.quantity)
-                  : "",
+                quantity:
+                  item.quantity !==
+                    undefined &&
+                  item.quantity !==
+                    null
+                    ? String(
+                        item.quantity
+                      )
+                    : "",
 
-              unit:
-                item.unit || "piece",
+                unit:
+                  item.unit ||
+                  "piece",
 
-              unit_price:
-                item.unit_price !== undefined &&
-                item.unit_price !== null
-                  ? String(item.unit_price)
-                  : "",
-            }))
+                unit_price:
+                  item.unit_price !==
+                    undefined &&
+                  item.unit_price !==
+                    null
+                    ? String(
+                        item.unit_price
+                      )
+                    : "",
+              })
+            )
           : [
               {
                 product: "",
@@ -680,9 +879,13 @@ export default function Sales() {
   // ============================================================
 
   const deleteSale = async (sale) => {
-    const confirmed = window.confirm(
-      `Are you sure you want to delete sale ${sale.invoice_no || `#${sale.id}`}?`
-    );
+    const confirmed =
+      window.confirm(
+        `Are you sure you want to delete sale ${
+          sale.invoice_no ||
+          `#${sale.id}`
+        }?`
+      );
 
     if (!confirmed) {
       return;
@@ -693,46 +896,36 @@ export default function Sales() {
       setError("");
       setSuccess("");
 
-      await api.delete(`/sales/${sale.id}/`);
+      await api.delete(
+        `/sales/${sale.id}/`
+      );
 
-      showSuccess("Sale deleted successfully.");
+      showSuccess(
+        "Sale deleted successfully."
+      );
 
       await Promise.all([
         loadSales(),
         loadEggStock(),
       ]);
 
-      if (editingId === sale.id) {
+      if (
+        editingId === sale.id
+      ) {
         resetForm();
       }
     } catch (err) {
-      console.error("Failed to delete sale:", err);
+      console.error(
+        "Failed to delete sale:",
+        err
+      );
 
-      setError(extractError(err));
+      setError(
+        extractError(err)
+      );
     } finally {
       setDeletingId(null);
     }
-  };
-
-  // ============================================================
-  // CUSTOMER NAME
-  // ============================================================
-
-  const getCustomerName = (customerId) => {
-    if (!customerId) {
-      return "Walk-in Customer";
-    }
-
-    const customer = customers.find(
-      (item) =>
-        String(item.id) === String(customerId)
-    );
-
-    return (
-      customer?.name ||
-      customer?.customer_name ||
-      `Customer #${customerId}`
-    );
   };
 
   // ============================================================
@@ -741,17 +934,26 @@ export default function Sales() {
 
   const getSalePaid = (sale) => {
     if (
-      sale.amount_paid !== undefined &&
-      sale.amount_paid !== null
+      sale.amount_paid !==
+        undefined &&
+      sale.amount_paid !==
+        null
     ) {
       return Math.max(
         0,
-        Number(sale.amount_paid)
+        Number(
+          sale.amount_paid
+        )
       );
     }
 
-    if (sale.payment_method !== "credit") {
-      return Number(sale.total || 0);
+    if (
+      sale.payment_method !==
+      "credit"
+    ) {
+      return Number(
+        sale.total || 0
+      );
     }
 
     return 0;
@@ -763,7 +965,8 @@ export default function Sales() {
 
   const getSaleBalance = (sale) => {
     if (
-      sale.balance !== undefined &&
+      sale.balance !==
+        undefined &&
       sale.balance !== null
     ) {
       return Math.max(
@@ -784,21 +987,43 @@ export default function Sales() {
   // ============================================================
 
   const getSaleStatus = (sale) => {
-    if (sale.payment_status) {
-      return sale.payment_status;
+    const paid =
+      getSalePaid(sale);
+
+    const total =
+      Number(sale.total || 0);
+
+    const balance =
+      getSaleBalance(sale);
+
+    /**
+     * Always prioritize the actual
+     * financial values.
+     */
+    if (
+      total <= 0 ||
+      balance <= 0
+    ) {
+      return "paid";
     }
 
-    return getPaymentStatus(
-      sale.total,
-      getSalePaid(sale)
-    );
+    if (
+      paid > 0 &&
+      balance > 0
+    ) {
+      return "partial";
+    }
+
+    return "unpaid";
   };
 
   // ============================================================
   // RECEIVE PAYMENT MODAL
   // ============================================================
 
-  const openPaymentModal = (sale) => {
+  const openPaymentModal = (
+    sale
+  ) => {
     setPaymentSale(sale);
 
     setPaymentForm({
@@ -819,20 +1044,29 @@ export default function Sales() {
     }
 
     setPaymentSale(null);
-    setPaymentForm(createInitialPaymentForm());
+    setPaymentForm(
+      createInitialPaymentForm()
+    );
   };
 
   // ============================================================
   // PAYMENT FORM CHANGE
   // ============================================================
 
-  const handlePaymentFormChange = (event) => {
-    const { name, value } = event.target;
+  const handlePaymentFormChange = (
+    event
+  ) => {
+    const {
+      name,
+      value,
+    } = event.target;
 
-    setPaymentForm((previous) => ({
-      ...previous,
-      [name]: value,
-    }));
+    setPaymentForm(
+      (previous) => ({
+        ...previous,
+        [name]: value,
+      })
+    );
   };
 
   // ============================================================
@@ -848,21 +1082,32 @@ export default function Sales() {
       return "Payment date is required.";
     }
 
-    const amount = Number(paymentForm.amount || 0);
+    const amount =
+      Number(
+        paymentForm.amount || 0
+      );
 
     if (amount <= 0) {
       return "Payment amount must be greater than 0.";
     }
 
     const outstanding =
-      getSaleBalance(paymentSale);
+      getSaleBalance(
+        paymentSale
+      );
 
-    if (amount > outstanding) {
+    if (
+      amount > outstanding
+    ) {
       return `Payment cannot be greater than the outstanding balance of ${outstanding.toLocaleString()}.`;
     }
 
     if (
-      !["cash", "mobile", "bank"].includes(
+      ![
+        "cash",
+        "mobile",
+        "bank",
+      ].includes(
         paymentForm.payment_method
       )
     ) {
@@ -876,13 +1121,18 @@ export default function Sales() {
   // SAVE PAYMENT
   // ============================================================
 
-  const savePayment = async (event) => {
+  const savePayment = async (
+    event
+  ) => {
     event.preventDefault();
 
-    const validationError = validatePayment();
+    const validationError =
+      validatePayment();
 
     if (validationError) {
-      setError(validationError);
+      setError(
+        validationError
+      );
       return;
     }
 
@@ -894,20 +1144,25 @@ export default function Sales() {
       const payload = {
         sale: paymentSale.id,
 
-        date: paymentForm.date,
+        date:
+          paymentForm.date,
 
         amount: Number(
-          Number(paymentForm.amount).toFixed(2)
+          Number(
+            paymentForm.amount
+          ).toFixed(2)
         ),
 
         payment_method:
           paymentForm.payment_method,
 
         reference:
-          paymentForm.reference?.trim() || "",
+          paymentForm.reference?.trim() ||
+          "",
 
         notes:
-          paymentForm.notes?.trim() || "",
+          paymentForm.notes?.trim() ||
+          "",
       };
 
       await api.post(
@@ -928,7 +1183,9 @@ export default function Sales() {
         err
       );
 
-      setError(extractError(err));
+      setError(
+        extractError(err)
+      );
     } finally {
       setSavingPayment(false);
     }
@@ -938,222 +1195,299 @@ export default function Sales() {
   // PAYMENT HISTORY
   // ============================================================
 
-  const openPaymentHistory = async (sale) => {
-    setPaymentHistorySale(sale);
-    setPaymentHistory([]);
-    setLoadingPaymentHistory(true);
-    setError("");
-
-    try {
-      const response = await api.get(
-        `/sale-payments/?sale=${sale.id}&ordering=-date,-id`
+  const openPaymentHistory =
+    async (sale) => {
+      setPaymentHistorySale(
+        sale
       );
 
-      setPaymentHistory(
-        getList(response)
+      setPaymentHistory([]);
+      setLoadingPaymentHistory(
+        true
       );
-    } catch (err) {
-      console.error(
-        "Failed to load payment history:",
-        err
+      setError("");
+
+      try {
+        const response =
+          await api.get(
+            `/sale-payments/?sale=${sale.id}&ordering=-date,-id`
+          );
+
+        setPaymentHistory(
+          getList(response)
+        );
+      } catch (err) {
+        console.error(
+          "Failed to load payment history:",
+          err
+        );
+
+        setError(
+          extractError(err)
+        );
+      } finally {
+        setLoadingPaymentHistory(
+          false
+        );
+      }
+    };
+
+  const closePaymentHistory =
+    () => {
+      if (
+        loadingPaymentHistory
+      ) {
+        return;
+      }
+
+      setPaymentHistorySale(
+        null
       );
 
-      setError(extractError(err));
-    } finally {
-      setLoadingPaymentHistory(false);
-    }
-  };
-
-  const closePaymentHistory = () => {
-    if (loadingPaymentHistory) {
-      return;
-    }
-
-    setPaymentHistorySale(null);
-    setPaymentHistory([]);
-  };
+      setPaymentHistory([]);
+    };
 
   // ============================================================
   // FILTER SALES
   // ============================================================
 
-  const filteredSales = useMemo(() => {
-    const keyword = search
-      .trim()
-      .toLowerCase();
+  const filteredSales =
+    useMemo(() => {
+      const keyword =
+        search
+          .trim()
+          .toLowerCase();
 
-    if (!keyword) {
-      return data;
-    }
+      if (!keyword) {
+        return data;
+      }
 
-    return data.filter((sale) => {
-      const customerName =
-        getCustomerName(sale.customer);
+      return data.filter(
+        (sale) => {
+          const customerName =
+            getCustomerName(
+              sale.customer ??
+                sale.customer_id
+            );
 
-      const itemNames = (
-        sale.items || []
-      )
-        .map(
-          (item) =>
-            item.product ||
-            item.product_name ||
-            ""
-        )
-        .join(" ");
+          const items =
+            Array.isArray(
+              sale.items
+            )
+              ? sale.items
+              : Array.isArray(
+                  sale.sale_items
+                )
+              ? sale.sale_items
+              : [];
 
-      return (
-        String(
-          sale.invoice_no || ""
-        )
-          .toLowerCase()
-          .includes(keyword) ||
+          const itemNames =
+            items
+              .map(
+                (item) =>
+                  item.product ||
+                  item.product_name ||
+                  ""
+              )
+              .join(" ");
 
-        customerName
-          .toLowerCase()
-          .includes(keyword) ||
+          return (
+            String(
+              sale.invoice_no ||
+                sale.invoice ||
+                ""
+            )
+              .toLowerCase()
+              .includes(
+                keyword
+              ) ||
 
-        itemNames
-          .toLowerCase()
-          .includes(keyword) ||
+            customerName
+              .toLowerCase()
+              .includes(
+                keyword
+              ) ||
 
-        String(
-          sale.payment_method || ""
-        )
-          .toLowerCase()
-          .includes(keyword) ||
+            itemNames
+              .toLowerCase()
+              .includes(
+                keyword
+              ) ||
 
-        String(
-          sale.payment_status || ""
-        )
-          .toLowerCase()
-          .includes(keyword)
+            String(
+              sale.payment_method ||
+                ""
+            )
+              .toLowerCase()
+              .includes(
+                keyword
+              ) ||
+
+            String(
+              sale.payment_status ||
+                ""
+            )
+              .toLowerCase()
+              .includes(
+                keyword
+              )
+          );
+        }
       );
-    });
-  }, [data, search, customers]);
+    }, [data, search, customers]);
 
   // ============================================================
   // SUMMARY STATISTICS
   // ============================================================
 
-  const totalSales = useMemo(() => {
-    return data.reduce(
-      (sum, sale) =>
-        sum + Number(sale.total || 0),
-      0
-    );
-  }, [data]);
-
-  const totalPaid = useMemo(() => {
-    return data.reduce(
-      (sum, sale) =>
-        sum + getSalePaid(sale),
-      0
-    );
-  }, [data]);
-
-  const totalOutstanding = useMemo(() => {
-    return data.reduce(
-      (sum, sale) =>
-        sum + getSaleBalance(sale),
-      0
-    );
-  }, [data]);
-
-  const totalCredit = useMemo(() => {
-    return data
-      .filter(
-        (sale) =>
-          sale.payment_method === "credit"
-      )
-      .reduce(
+  const totalSales =
+    useMemo(() => {
+      return data.reduce(
         (sum, sale) =>
-          sum + getSaleBalance(sale),
+          sum +
+          Number(
+            sale.total || 0
+          ),
         0
       );
-  }, [data]);
+    }, [data]);
+
+  const totalPaid =
+    useMemo(() => {
+      return data.reduce(
+        (sum, sale) =>
+          sum +
+          getSalePaid(sale),
+        0
+      );
+    }, [data]);
+
+  const totalOutstanding =
+    useMemo(() => {
+      return data.reduce(
+        (sum, sale) =>
+          sum +
+          getSaleBalance(sale),
+        0
+      );
+    }, [data]);
+
+  const totalCredit =
+    useMemo(() => {
+      return data
+        .filter(
+          (sale) =>
+            sale.payment_method ===
+            "credit"
+        )
+        .reduce(
+          (sum, sale) =>
+            sum +
+            getSaleBalance(
+              sale
+            ),
+          0
+        );
+    }, [data]);
 
   // ============================================================
   // PAYMENT HISTORY SALE DATA
   // ============================================================
 
-  const paymentHistoryData = useMemo(() => {
-    if (!paymentHistorySale) {
-      return {
-        totalPaid: 0,
-        recordedPaymentsTotal: 0,
-        initialPayment: 0,
-        payments: [],
-      };
-    }
-
-    const totalPaid = getSalePaid(
-      paymentHistorySale
-    );
-
-    const recordedPaymentsTotal =
-      paymentHistory.reduce(
-        (sum, payment) =>
-          sum +
-          Number(payment.amount || 0),
-        0
-      );
-
-    const initialPayment = Math.max(
-      totalPaid -
-        recordedPaymentsTotal,
-      0
-    );
-
-    const payments = [
-      ...paymentHistory,
-    ];
-
-    if (initialPayment > 0) {
-      payments.push({
-        id: "initial-payment",
-        date:
-          paymentHistorySale.date ||
-          getToday(),
-        payment_method:
-          paymentHistorySale.payment_method ||
-          "cash",
-        reference: "",
-        amount: initialPayment,
-        notes:
-          "Initial payment recorded with sale.",
-        is_initial: true,
-      });
-    }
-
-    payments.sort((a, b) => {
-      const dateA = String(
-        a.date || ""
-      );
-
-      const dateB = String(
-        b.date || ""
-      );
-
-      if (dateA !== dateB) {
-        return dateB.localeCompare(dateA);
+  const paymentHistoryData =
+    useMemo(() => {
+      if (!paymentHistorySale) {
+        return {
+          totalPaid: 0,
+          recordedPaymentsTotal: 0,
+          initialPayment: 0,
+          payments: [],
+        };
       }
 
-      return (
-        Number(b.id || 0) -
-        Number(a.id || 0)
-      );
-    });
+      const totalPaid =
+        getSalePaid(
+          paymentHistorySale
+        );
 
-    return {
-      totalPaid,
-      recordedPaymentsTotal,
-      initialPayment,
-      payments,
-    };
-  }, [
-    paymentHistorySale,
-    paymentHistory,
-  ]);
+      const recordedPaymentsTotal =
+        paymentHistory.reduce(
+          (sum, payment) =>
+            sum +
+            Number(
+              payment.amount || 0
+            ),
+          0
+        );
+
+      const initialPayment =
+        Math.max(
+          totalPaid -
+            recordedPaymentsTotal,
+          0
+        );
+
+      const payments = [
+        ...paymentHistory,
+      ];
+
+      if (
+        initialPayment > 0
+      ) {
+        payments.push({
+          id: "initial-payment",
+          date:
+            paymentHistorySale.date ||
+            getToday(),
+          payment_method:
+            paymentHistorySale.payment_method ||
+            "cash",
+          reference: "",
+          amount:
+            initialPayment,
+          notes:
+            "Initial payment recorded with sale.",
+          is_initial: true,
+        });
+      }
+
+      payments.sort(
+        (a, b) => {
+          const dateA =
+            String(
+              a.date || ""
+            );
+
+          const dateB =
+            String(
+              b.date || ""
+            );
+
+          if (
+            dateA !== dateB
+          ) {
+            return dateB.localeCompare(
+              dateA
+            );
+          }
+
+          return (
+            Number(b.id || 0) -
+            Number(a.id || 0)
+          );
+        }
+      );
+
+      return {
+        totalPaid,
+        recordedPaymentsTotal,
+        initialPayment,
+        payments,
+      };
+    }, [
+      paymentHistorySale,
+      paymentHistory,
+    ]);
 
   // ============================================================
   // REPORT
@@ -1194,7 +1528,9 @@ export default function Sales() {
             <button
               type="button"
               className="btn-close"
-              onClick={() => setError("")}
+              onClick={() =>
+                setError("")
+              }
               aria-label="Close"
             />
           </div>
@@ -1205,13 +1541,17 @@ export default function Sales() {
             className="alert alert-success alert-dismissible fade show"
             role="alert"
           >
-            <strong>Success:</strong>{" "}
+            <strong>
+              Success:
+            </strong>{" "}
             {success}
 
             <button
               type="button"
               className="btn-close"
-              onClick={() => setSuccess("")}
+              onClick={() =>
+                setSuccess("")
+              }
               aria-label="Close"
             />
           </div>
@@ -1223,15 +1563,33 @@ export default function Sales() {
 
         <SalesSummary
           eggStock={eggStock}
-          loadingEggStock={loadingEggStock}
-          eggStockError={eggStockError}
-          totalEggsInForm={totalEggsInForm}
-          hasEnoughEggStock={hasEnoughEggStock}
-          remainingEggStock={remainingEggStock}
-          totalSales={totalSales}
-          totalPaid={totalPaid}
-          totalOutstanding={totalOutstanding}
-          totalCredit={totalCredit}
+          loadingEggStock={
+            loadingEggStock
+          }
+          eggStockError={
+            eggStockError
+          }
+          totalEggsInForm={
+            totalEggsInForm
+          }
+          hasEnoughEggStock={
+            hasEnoughEggStock
+          }
+          remainingEggStock={
+            remainingEggStock
+          }
+          totalSales={
+            totalSales
+          }
+          totalPaid={
+            totalPaid
+          }
+          totalOutstanding={
+            totalOutstanding
+          }
+          totalCredit={
+            totalCredit
+          }
         />
 
         {/* ======================================================
@@ -1239,7 +1597,9 @@ export default function Sales() {
         ====================================================== */}
 
         <div className="d-flex justify-content-end mb-3">
-          <SalesReport {...reportProps} />
+          <SalesReport
+            {...reportProps}
+          />
         </div>
 
         {/* ======================================================
@@ -1250,26 +1610,44 @@ export default function Sales() {
           form={form}
           editingId={editingId}
           customers={customers}
-          loadingCustomers={loadingCustomers}
+          loadingCustomers={
+            loadingCustomers
+          }
           saving={saving}
           subtotal={subtotal}
           discount={discount}
           total={total}
           amountPaid={amountPaid}
           balance={balance}
-          paymentStatus={paymentStatus}
-          totalEggsInForm={totalEggsInForm}
+          paymentStatus={
+            paymentStatus
+          }
+          totalEggsInForm={
+            totalEggsInForm
+          }
           eggStock={eggStock}
-          eggStockError={eggStockError}
-          hasEnoughEggStock={hasEnoughEggStock}
-          remainingEggStock={remainingEggStock}
-          onFormChange={handleFormChange}
+          eggStockError={
+            eggStockError
+          }
+          hasEnoughEggStock={
+            hasEnoughEggStock
+          }
+          remainingEggStock={
+            remainingEggStock
+          }
+          onFormChange={
+            handleFormChange
+          }
           onPaymentMethodChange={
             handlePaymentMethodChange
           }
-          onItemChange={handleItemChange}
+          onItemChange={
+            handleItemChange
+          }
           onAddItem={addItem}
-          onRemoveItem={removeItem}
+          onRemoveItem={
+            removeItem
+          }
           onSubmit={save}
           onReset={resetForm}
         />
@@ -1282,11 +1660,25 @@ export default function Sales() {
           loading={loading}
           sales={filteredSales}
           search={search}
-          onSearchChange={setSearch}
-          getCustomerName={getCustomerName}
-          getSalePaid={getSalePaid}
-          getSaleBalance={getSaleBalance}
-          getSaleStatus={getSaleStatus}
+          onSearchChange={
+            setSearch
+          }
+          getCustomerName={
+            (sale) =>
+              getCustomerName(
+                sale?.customer ??
+                  sale?.customer_id
+              )
+          }
+          getSalePaid={
+            getSalePaid
+          }
+          getSaleBalance={
+            getSaleBalance
+          }
+          getSaleStatus={
+            getSaleStatus
+          }
           onReceivePayment={
             openPaymentModal
           }
@@ -1307,12 +1699,22 @@ export default function Sales() {
       <ReceivePaymentModal
         paymentSale={paymentSale}
         paymentForm={paymentForm}
-        savingPayment={savingPayment}
-        onClose={closePaymentModal}
-        onChange={handlePaymentFormChange}
+        savingPayment={
+          savingPayment
+        }
+        onClose={
+          closePaymentModal
+        }
+        onChange={
+          handlePaymentFormChange
+        }
         onSubmit={savePayment}
-        getSalePaid={getSalePaid}
-        getSaleBalance={getSaleBalance}
+        getSalePaid={
+          getSalePaid
+        }
+        getSaleBalance={
+          getSaleBalance
+        }
       />
 
       {/* ========================================================
@@ -1343,7 +1745,9 @@ export default function Sales() {
           closePaymentHistory
         }
         onReceivePayment={() => {
-          if (!paymentHistorySale) {
+          if (
+            !paymentHistorySale
+          ) {
             return;
           }
 
@@ -1352,7 +1756,9 @@ export default function Sales() {
 
           closePaymentHistory();
 
-          openPaymentModal(sale);
+          openPaymentModal(
+            sale
+          );
         }}
       />
     </>

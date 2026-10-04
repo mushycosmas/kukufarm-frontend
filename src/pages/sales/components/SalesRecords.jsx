@@ -16,7 +16,79 @@ const toNumber = (value) => {
 };
 
 /**
- * Calculate egg quantity for a sale item.
+ * Normalize payment status.
+ *
+ * Handles different values that may come from Django/API.
+ */
+const normalizeStatus = (status) => {
+  const value = String(status || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[\s-]+/g, "_");
+
+  switch (value) {
+    case "paid":
+    case "fully_paid":
+    case "complete":
+    case "completed":
+      return "paid";
+
+    case "partial":
+    case "partially_paid":
+    case "partial_payment":
+    case "partiallypaid":
+      return "partial";
+
+    case "credit":
+    case "unpaid":
+    case "pending":
+    case "outstanding":
+    case "due":
+      return "unpaid";
+
+    default:
+      return value || "unpaid";
+  }
+};
+
+/**
+ * Calculate payment status from actual payment values.
+ *
+ * We intentionally calculate the status from paid/balance
+ * instead of trusting an outdated payment_status from the API.
+ */
+const calculateStatus = (sale, total, paid, balance, getSaleStatus) => {
+  /**
+   * If Sales.jsx provides getSaleStatus(), use it first.
+   */
+  if (typeof getSaleStatus === "function") {
+    const providedStatus = getSaleStatus(sale);
+
+    if (providedStatus) {
+      return normalizeStatus(providedStatus);
+    }
+  }
+
+  /**
+   * Otherwise calculate from financial values.
+   */
+  if (total <= 0) {
+    return "paid";
+  }
+
+  if (balance <= 0) {
+    return "paid";
+  }
+
+  if (paid > 0 && paid < total) {
+    return "partial";
+  }
+
+  return "unpaid";
+};
+
+/**
+ * Safely calculate egg quantity.
  *
  * Supports:
  * - piece
@@ -31,7 +103,7 @@ const calculateEggQuantity = (item) => {
 
   const quantity = toNumber(item.quantity);
 
-  if (item.unit === "tray") {
+  if (String(item.unit || "").toLowerCase() === "tray") {
     return quantity * EGGS_PER_TRAY;
   }
 
@@ -113,7 +185,11 @@ const getInvoiceNumber = (sale) => {
  */
 const getCustomerDisplayName = (sale, getCustomerName) => {
   if (typeof getCustomerName === "function") {
-    return getCustomerName(sale);
+    const name = getCustomerName(sale);
+
+    if (name) {
+      return name;
+    }
   }
 
   if (sale?.customer_name) {
@@ -132,6 +208,27 @@ const getCustomerDisplayName = (sale, getCustomerName) => {
 };
 
 /**
+ * Get customer phone safely.
+ */
+const getCustomerPhone = (sale) => {
+  if (!sale) return "";
+
+  if (sale.customer?.phone) {
+    return sale.customer.phone;
+  }
+
+  if (sale.customer_phone) {
+    return sale.customer_phone;
+  }
+
+  if (sale.phone) {
+    return sale.phone;
+  }
+
+  return "";
+};
+
+/**
  * Get sale total safely.
  */
 const getSaleTotal = (sale) => {
@@ -141,11 +238,17 @@ const getSaleTotal = (sale) => {
     return toNumber(sale.total);
   }
 
-  if (sale.grand_total !== undefined && sale.grand_total !== null) {
+  if (
+    sale.grand_total !== undefined &&
+    sale.grand_total !== null
+  ) {
     return toNumber(sale.grand_total);
   }
 
-  if (sale.total_amount !== undefined && sale.total_amount !== null) {
+  if (
+    sale.total_amount !== undefined &&
+    sale.total_amount !== null
+  ) {
     return toNumber(sale.total_amount);
   }
 
@@ -162,19 +265,147 @@ const getSaleTotal = (sale) => {
 };
 
 /**
+ * Get paid amount safely.
+ */
+const getPaidAmount = (sale, total, getSalePaid) => {
+  if (typeof getSalePaid === "function") {
+    return Math.max(0, toNumber(getSalePaid(sale)));
+  }
+
+  if (
+    sale?.amount_paid !== undefined &&
+    sale?.amount_paid !== null
+  ) {
+    return Math.max(0, toNumber(sale.amount_paid));
+  }
+
+  /**
+   * Non-credit sales are considered paid if the backend
+   * does not provide amount_paid.
+   */
+  const paymentMethod = String(
+    sale?.payment_method || ""
+  ).toLowerCase();
+
+  if (
+    paymentMethod &&
+    paymentMethod !== "credit" &&
+    paymentMethod !== "unpaid"
+  ) {
+    return Math.max(0, total);
+  }
+
+  return 0;
+};
+
+/**
+ * Get balance safely.
+ */
+const getBalanceAmount = (
+  sale,
+  total,
+  paid,
+  getSaleBalance
+) => {
+  if (typeof getSaleBalance === "function") {
+    return Math.max(0, toNumber(getSaleBalance(sale)));
+  }
+
+  if (
+    sale?.balance !== undefined &&
+    sale?.balance !== null
+  ) {
+    return Math.max(0, toNumber(sale.balance));
+  }
+
+  if (
+    sale?.outstanding !== undefined &&
+    sale?.outstanding !== null
+  ) {
+    return Math.max(0, toNumber(sale.outstanding));
+  }
+
+  return Math.max(0, total - paid);
+};
+
+/**
  * Get sale date safely.
  */
 const formatSaleDate = (date) => {
   if (!date) return "-";
 
-  try {
-    return new Date(date).toLocaleDateString("en-GB", {
-      day: "2-digit",
-      month: "short",
-      year: "numeric",
-    });
-  } catch {
+  const parsedDate = new Date(date);
+
+  if (Number.isNaN(parsedDate.getTime())) {
     return date;
+  }
+
+  return parsedDate.toLocaleDateString("en-GB", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+  });
+};
+
+/**
+ * Get Bootstrap status class safely.
+ *
+ * This also protects the table if the helper returns an old
+ * class such as "active", "warning", or "inactive".
+ */
+const getSafeStatusClass = (status) => {
+  const normalized = normalizeStatus(status);
+
+  switch (normalized) {
+    case "paid":
+      return "bg-success";
+
+    case "partial":
+      return "bg-warning text-dark";
+
+    case "unpaid":
+      return "bg-danger";
+
+    default: {
+      const helperClass = getPaymentStatusClass?.(normalized);
+
+      /**
+       * Only use helper classes if they look like valid
+       * Bootstrap background classes.
+       */
+      if (
+        typeof helperClass === "string" &&
+        helperClass.includes("bg-")
+      ) {
+        return helperClass;
+      }
+
+      return "bg-secondary";
+    }
+  }
+};
+
+/**
+ * Get status label safely.
+ */
+const getSafeStatusLabel = (status) => {
+  const normalized = normalizeStatus(status);
+
+  switch (normalized) {
+    case "paid":
+      return "Paid";
+
+    case "partial":
+      return "Partial";
+
+    case "unpaid":
+      return "Unpaid";
+
+    default:
+      return (
+        getPaymentStatusLabel?.(normalized) ||
+        "Unpaid"
+      );
   }
 };
 
@@ -206,7 +437,8 @@ export default function SalesRecords({
     const items = getSaleItems(sale);
 
     return items.reduce(
-      (total, item) => total + calculateEggQuantity(item),
+      (total, item) =>
+        total + calculateEggQuantity(item),
       0
     );
   };
@@ -218,11 +450,15 @@ export default function SalesRecords({
     const items = getSaleItems(sale);
 
     return items.reduce((total, item) => {
-      if (!item?.is_egg) return total;
+      if (!item?.is_egg) {
+        return total;
+      }
 
       const quantity = toNumber(item.quantity);
 
-      if (item.unit === "tray") {
+      if (
+        String(item.unit || "").toLowerCase() === "tray"
+      ) {
         return total + quantity;
       }
 
@@ -259,7 +495,10 @@ export default function SalesRecords({
                 placeholder="Search invoice, customer, product..."
                 value={search || ""}
                 onChange={(e) => {
-                  if (typeof onSearchChange === "function") {
+                  if (
+                    typeof onSearchChange ===
+                    "function"
+                  ) {
                     onSearchChange(e.target.value);
                   }
                 }}
@@ -270,7 +509,10 @@ export default function SalesRecords({
                   type="button"
                   className="btn btn-outline-secondary"
                   onClick={() => {
-                    if (typeof onSearchChange === "function") {
+                    if (
+                      typeof onSearchChange ===
+                      "function"
+                    ) {
                       onSearchChange("");
                     }
                   }}
@@ -305,7 +547,9 @@ export default function SalesRecords({
             <i className="bi bi-receipt display-4 text-muted"></i>
           </div>
 
-          <h5 className="text-muted">No sales records found</h5>
+          <h5 className="text-muted">
+            No sales records found
+          </h5>
 
           {search ? (
             <p className="text-muted mb-0">
@@ -319,7 +563,7 @@ export default function SalesRecords({
         </div>
       )}
 
-      {/* Desktop Table */}
+      {/* Table */}
       {!loading && safeSales.length > 0 && (
         <div className="table-responsive">
           <table className="table table-hover align-middle mb-0">
@@ -333,7 +577,9 @@ export default function SalesRecords({
                 <th className="text-end">Total</th>
                 <th className="text-end">Paid</th>
                 <th className="text-end">Balance</th>
-                <th>Status</th>
+                <th className="text-center">
+                  Status
+                </th>
                 <th className="text-end">Actions</th>
               </tr>
             </thead>
@@ -344,34 +590,51 @@ export default function SalesRecords({
 
                 const total = getSaleTotal(sale);
 
-                const paid =
-                  typeof getSalePaid === "function"
-                    ? toNumber(getSalePaid(sale))
-                    : toNumber(sale.amount_paid);
-
-                const balance =
-                  typeof getSaleBalance === "function"
-                    ? toNumber(getSaleBalance(sale))
-                    : Math.max(0, total - paid);
-
-                const status =
-                  typeof getSaleStatus === "function"
-                    ? getSaleStatus(sale)
-                    : sale.payment_status ||
-                      (balance <= 0
-                        ? "paid"
-                        : paid > 0
-                        ? "partial"
-                        : "unpaid");
-
-                const customer = getCustomerDisplayName(
+                const paid = getPaidAmount(
                   sale,
-                  getCustomerName
+                  total,
+                  getSalePaid
                 );
 
-                const eggQuantity = getSaleEggQuantity(sale);
+                const balance = getBalanceAmount(
+                  sale,
+                  total,
+                  paid,
+                  getSaleBalance
+                );
+
+                /**
+                 * Important:
+                 * Status is calculated from the actual
+                 * financial values.
+                 */
+                const status = calculateStatus(
+                  sale,
+                  total,
+                  paid,
+                  balance,
+                  getSaleStatus
+                );
+
+                const customer =
+                  getCustomerDisplayName(
+                    sale,
+                    getCustomerName
+                  );
+
+                const customerPhone =
+                  getCustomerPhone(sale);
+
+                const eggQuantity =
+                  getSaleEggQuantity(sale);
 
                 const trays = getSaleTrays(sale);
+
+                const statusClass =
+                  getSafeStatusClass(status);
+
+                const statusLabel =
+                  getSafeStatusLabel(status);
 
                 return (
                   <tr key={sale.id}>
@@ -395,9 +658,9 @@ export default function SalesRecords({
                         {customer}
                       </div>
 
-                      {sale.customer?.phone && (
+                      {customerPhone && (
                         <small className="text-muted">
-                          {sale.customer.phone}
+                          {customerPhone}
                         </small>
                       )}
                     </td>
@@ -405,31 +668,42 @@ export default function SalesRecords({
                     {/* Products */}
                     <td>
                       {items.length === 0 ? (
-                        <span className="text-muted">-</span>
+                        <span className="text-muted">
+                          -
+                        </span>
                       ) : (
                         <div>
-                          {items.map((item, index) => {
-                            const itemQuantity = toNumber(item.quantity);
+                          {items.map(
+                            (item, index) => {
+                              const itemQuantity =
+                                toNumber(
+                                  item.quantity
+                                );
 
-                            return (
-                              <div
-                                key={
-                                  item.id ||
-                                  `${sale.id}-item-${index}`
-                                }
-                                className="mb-1"
-                              >
-                                <span className="fw-medium">
-                                  {getProductName(item)}
-                                </span>
+                              return (
+                                <div
+                                  key={
+                                    item.id ||
+                                    `${sale.id}-item-${index}`
+                                  }
+                                  className="mb-1"
+                                >
+                                  <span className="fw-medium">
+                                    {getProductName(
+                                      item
+                                    )}
+                                  </span>
 
-                                <small className="text-muted ms-1">
-                                  ({itemQuantity}{" "}
-                                  {item.unit || "piece"})
-                                </small>
-                              </div>
-                            );
-                          })}
+                                  <small className="text-muted ms-1">
+                                    ({itemQuantity}{" "}
+                                    {item.unit ||
+                                      "piece"}
+                                    )
+                                  </small>
+                                </div>
+                              );
+                            }
+                          )}
                         </div>
                       )}
                     </td>
@@ -444,20 +718,25 @@ export default function SalesRecords({
 
                           <small className="text-muted d-block">
                             eggs
+
                             {trays > 0 && (
                               <>
                                 {" "}
                                 ·{" "}
                                 {trays % 1 === 0
                                   ? trays
-                                  : trays.toFixed(2)}{" "}
+                                  : trays.toFixed(
+                                      2
+                                    )}{" "}
                                 trays
                               </>
                             )}
                           </small>
                         </div>
                       ) : (
-                        <span className="text-muted">-</span>
+                        <span className="text-muted">
+                          -
+                        </span>
                       )}
                     </td>
 
@@ -489,20 +768,18 @@ export default function SalesRecords({
                     </td>
 
                     {/* Status */}
-                    <td>
+                    <td className="text-center">
                       <span
-                        className={`badge ${getPaymentStatusClass(
-                          status
-                        )}`}
+                        className={`badge rounded-pill px-3 py-2 ${statusClass}`}
                       >
-                        {getPaymentStatusLabel(status)}
+                        {statusLabel}
                       </span>
                     </td>
 
                     {/* Actions */}
                     <td className="text-end">
                       <div className="btn-group btn-group-sm">
-                        {/* Receive payment */}
+                        {/* Receive Payment */}
                         {balance > 0 && (
                           <button
                             type="button"
@@ -513,7 +790,9 @@ export default function SalesRecords({
                                 typeof onReceivePayment ===
                                 "function"
                               ) {
-                                onReceivePayment(sale);
+                                onReceivePayment(
+                                  sale
+                                );
                               }
                             }}
                           >
@@ -521,7 +800,7 @@ export default function SalesRecords({
                           </button>
                         )}
 
-                        {/* Payment history */}
+                        {/* Payment History */}
                         <button
                           type="button"
                           className="btn btn-outline-info"
@@ -531,7 +810,9 @@ export default function SalesRecords({
                               typeof onPaymentHistory ===
                               "function"
                             ) {
-                              onPaymentHistory(sale);
+                              onPaymentHistory(
+                                sale
+                              );
                             }
                           }}
                         >
@@ -549,7 +830,8 @@ export default function SalesRecords({
                           }
                           onClick={() => {
                             if (
-                              typeof onEdit === "function"
+                              typeof onEdit ===
+                              "function"
                             ) {
                               onEdit(sale);
                             }
@@ -577,7 +859,8 @@ export default function SalesRecords({
                           }
                           onClick={() => {
                             if (
-                              typeof onDelete === "function"
+                              typeof onDelete ===
+                              "function"
                             ) {
                               onDelete(sale);
                             }
@@ -603,7 +886,7 @@ export default function SalesRecords({
         </div>
       )}
 
-      {/* Mobile-friendly footer */}
+      {/* Footer */}
       {!loading && safeSales.length > 0 && (
         <div className="card-footer bg-white border-top">
           <div className="d-flex justify-content-between align-items-center">
