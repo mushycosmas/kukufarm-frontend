@@ -1,297 +1,442 @@
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
 
-import React, { useEffect, useMemo, useState } from "react";
 import PageHeader from "../components/common/PageHeader";
 import api from "../services/api";
 
-const initialForm = {
-  name: "",
-  phone: "",
-  location: "",
-};
+const Customers = () => {
+  /* =========================================================
+     FORM
+  ========================================================= */
 
-function getList(response) {
-  if (Array.isArray(response?.data)) {
-    return response.data;
-  }
-
-  if (Array.isArray(response?.data?.results)) {
-    return response.data.results;
-  }
-
-  return [];
-}
-
-function extractError(error) {
-  const data = error?.response?.data;
-
-  if (!data) {
-    return error?.message || "Something went wrong.";
-  }
-
-  if (typeof data === "string") {
-    return data;
-  }
-
-  if (data.detail) {
-    return data.detail;
-  }
-
-  if (typeof data === "object") {
-    return Object.entries(data)
-      .map(([field, value]) => {
-        const message = Array.isArray(value)
-          ? value.join(", ")
-          : value;
-
-        return `${field}: ${message}`;
-      })
-      .join(" | ");
-  }
-
-  return "Something went wrong.";
-}
-
-function formatMoney(value) {
-  return Number(value || 0).toLocaleString("en-TZ", {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  });
-}
-
-function formatNumber(value) {
-  return Number(value || 0).toLocaleString("en-TZ");
-}
-
-function formatDate(value) {
-  if (!value) {
-    return "-";
-  }
-
-  const date = new Date(value);
-
-  if (Number.isNaN(date.getTime())) {
-    return value;
-  }
-
-  return date.toLocaleDateString("en-TZ", {
-    year: "numeric",
-    month: "short",
-    day: "2-digit",
-  });
-}
-
-/*
-|--------------------------------------------------------------------------
-| Sale Helpers
-|--------------------------------------------------------------------------
-*/
-
-function getCustomerId(item) {
-  return (
-    item?.customer_id ??
-    item?.customer?.id ??
-    item?.customer
-  );
-}
-
-function getSaleDate(sale) {
-  return (
-    sale?.date ||
-    sale?.sale_date ||
-    sale?.transaction_date ||
-    sale?.created_at
-  );
-}
-
-function getSaleTotal(sale) {
-  return Number(sale?.total || 0);
-}
-
-function getSalePaid(sale) {
-  /*
-   * IMPORTANT:
-   *
-   * Sale.amount_paid is the cumulative amount paid.
-   *
-   * Do NOT use SalePayment total here because
-   * SalePayment contains only individual payment
-   * transactions and may not include the initial payment.
-   */
-  return Number(sale?.amount_paid || 0);
-}
-
-function getSaleBalance(sale) {
-  /*
-   * Backend already defines:
-   *
-   * balance = total - amount_paid
-   *
-   * We calculate it again on frontend to make the
-   * customer profile reliable even if balance is
-   * not serialized by the API.
-   */
-  const total = getSaleTotal(sale);
-  const paid = getSalePaid(sale);
-
-  return Math.max(total - paid, 0);
-}
-
-/*
-|--------------------------------------------------------------------------
-| Sale Item Helpers
-|--------------------------------------------------------------------------
-*/
-
-function getSaleItems(sale) {
-  return Array.isArray(sale?.items) ? sale.items : [];
-}
-
-function getEggsFromItem(item) {
-  if (!item?.is_egg) {
-    return 0;
-  }
-
-  const quantity = Number(item?.quantity || 0);
-
-  /*
-   * Backend:
-   *
-   * tray = 30 eggs
-   * piece = 1 egg
-   */
-  if (item?.unit === "tray") {
-    return quantity * 30;
-  }
-
-  return quantity;
-}
-
-function getTraysFromItem(item) {
-  if (!item?.is_egg) {
-    return 0;
-  }
-
-  if (item?.unit !== "tray") {
-    return 0;
-  }
-
-  return Number(item?.quantity || 0);
-}
-
-function getSaleEggs(sale) {
-  return getSaleItems(sale).reduce(
-    (sum, item) => sum + getEggsFromItem(item),
-    0
-  );
-}
-
-function getSaleTrays(sale) {
-  return getSaleItems(sale).reduce(
-    (sum, item) => sum + getTraysFromItem(item),
-    0
-  );
-}
-
-/*
-|--------------------------------------------------------------------------
-| Payment Helpers
-|--------------------------------------------------------------------------
-*/
-
-function getPaymentDate(payment) {
-  return (
-    payment?.date ||
-    payment?.payment_date ||
-    payment?.transaction_date ||
-    payment?.created_at
-  );
-}
-
-function getPaymentAmount(payment) {
-  return Number(
-    payment?.amount ??
-      payment?.payment_amount ??
-      payment?.paid_amount ??
-      payment?.amount_paid ??
-      0
-  );
-}
-
-function getPaymentMethod(payment) {
-  return (
-    payment?.payment_method ||
-    payment?.method ||
-    payment?.payment_type ||
-    "-"
-  );
-}
-
-/*
-|--------------------------------------------------------------------------
-| Component
-|--------------------------------------------------------------------------
-*/
-
-export default function Customers() {
-  const [data, setData] = useState([]);
+  const initialForm = {
+    name: "",
+    phone: "",
+    email: "",
+    address: "",
+    active: true,
+  };
 
   const [form, setForm] = useState(initialForm);
-
   const [editingId, setEditingId] = useState(null);
+  const [showForm, setShowForm] = useState(false);
 
-  const [loading, setLoading] = useState(true);
+  /* =========================================================
+     CUSTOMERS
+  ========================================================= */
+
+  const [customers, setCustomers] = useState([]);
+  const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [deletingId, setDeletingId] = useState(null);
 
+  /* =========================================================
+     SEARCH / ALERTS
+  ========================================================= */
+
+  const [search, setSearch] = useState("");
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
 
-  const [search, setSearch] = useState("");
+  /* =========================================================
+     CUSTOMER DETAILS
+  ========================================================= */
 
-  const [showForm, setShowForm] = useState(false);
+  const [selectedCustomer, setSelectedCustomer] =
+    useState(null);
 
-  /*
-  |--------------------------------------------------------------------------
-  | Customer Details
-  |--------------------------------------------------------------------------
-  */
-
-  const [selectedCustomer, setSelectedCustomer] = useState(null);
   const [customerSales, setCustomerSales] = useState([]);
-  const [customerPayments, setCustomerPayments] = useState([]);
+  const [customerPayments, setCustomerPayments] =
+    useState([]);
 
-  const [detailsLoading, setDetailsLoading] = useState(false);
-  const [detailsError, setDetailsError] = useState("");
+  const [detailsLoading, setDetailsLoading] =
+    useState(false);
 
-  /*
-  |--------------------------------------------------------------------------
-  | Load Customers
-  |--------------------------------------------------------------------------
-  */
+  const [detailsError, setDetailsError] =
+    useState("");
 
-  useEffect(() => {
-    loadCustomers();
-  }, []);
+  /* =========================================================
+     PDF REPORT
+  ========================================================= */
 
-  const loadCustomers = async () => {
-    setLoading(true);
-    setError("");
+  const [exporting, setExporting] = useState(false);
+  const [reportFromDate, setReportFromDate] =
+    useState("");
+  const [reportToDate, setReportToDate] =
+    useState("");
+
+  /* =========================================================
+     HELPERS
+  ========================================================= */
+
+  const getList = (data) => {
+    if (Array.isArray(data)) {
+      return data;
+    }
+
+    if (Array.isArray(data?.results)) {
+      return data.results;
+    }
+
+    if (Array.isArray(data?.data)) {
+      return data.data;
+    }
+
+    return [];
+  };
+
+  const extractError = (err) => {
+    const responseData = err?.response?.data;
+
+    if (!responseData) {
+      return (
+        err?.message ||
+        "An unexpected error occurred."
+      );
+    }
+
+    if (typeof responseData === "string") {
+      return responseData;
+    }
+
+    if (responseData.detail) {
+      return responseData.detail;
+    }
+
+    if (responseData.message) {
+      return responseData.message;
+    }
+
+    if (typeof responseData === "object") {
+      const messages = [];
+
+      Object.entries(responseData).forEach(
+        ([field, value]) => {
+          if (Array.isArray(value)) {
+            messages.push(
+              `${field}: ${value.join(", ")}`
+            );
+          } else if (typeof value === "string") {
+            messages.push(
+              `${field}: ${value}`
+            );
+          }
+        }
+      );
+
+      if (messages.length > 0) {
+        return messages.join(" | ");
+      }
+    }
+
+    return "An unexpected error occurred.";
+  };
+
+  const showSuccess = (message) => {
+    setSuccess(message);
+
+    window.setTimeout(() => {
+      setSuccess("");
+    }, 5000);
+  };
+
+  const formatMoney = (value) => {
+    const amount = Number(value || 0);
+
+    return new Intl.NumberFormat(
+      "en-TZ",
+      {
+        minimumFractionDigits: 0,
+        maximumFractionDigits: 2,
+      }
+    ).format(amount);
+  };
+
+  const formatNumber = (value) => {
+    return new Intl.NumberFormat(
+      "en-TZ"
+    ).format(Number(value || 0));
+  };
+
+  const formatDate = (value) => {
+    if (!value) {
+      return "-";
+    }
 
     try {
-      const response = await api.get("/customers/");
-      setData(getList(response));
-    } catch (err) {
-      setError(extractError(err));
-    } finally {
-      setLoading(false);
+      return new Date(value).toLocaleDateString(
+        "en-GB"
+      );
+    } catch {
+      return value;
     }
   };
 
-  /*
-  |--------------------------------------------------------------------------
-  | Form
-  |--------------------------------------------------------------------------
-  */
+  const getToday = () => {
+    const date = new Date();
+
+    const year = date.getFullYear();
+    const month = String(
+      date.getMonth() + 1
+    ).padStart(2, "0");
+
+    const day = String(
+      date.getDate()
+    ).padStart(2, "0");
+
+    return `${year}-${month}-${day}`;
+  };
+
+  /* =========================================================
+     SALE HELPERS
+  ========================================================= */
+
+  const getCustomerId = (sale) => {
+    if (sale?.customer_id) {
+      return sale.customer_id;
+    }
+
+    if (
+      sale?.customer &&
+      typeof sale.customer === "object"
+    ) {
+      return sale.customer.id;
+    }
+
+    if (
+      sale?.customer &&
+      typeof sale.customer !== "object"
+    ) {
+      return sale.customer;
+    }
+
+    return null;
+  };
+
+  const getSaleDate = (sale) => {
+    return (
+      sale?.date ||
+      sale?.sale_date ||
+      sale?.created_at ||
+      null
+    );
+  };
+
+  const getSaleTotal = (sale) => {
+    return Number(
+      sale?.total ??
+      sale?.grand_total ??
+      sale?.amount ??
+      0
+    );
+  };
+
+  const getSalePaid = (sale) => {
+    return Number(
+      sale?.amount_paid ??
+      sale?.paid_amount ??
+      0
+    );
+  };
+
+  const getSaleBalance = (sale) => {
+    const total = getSaleTotal(sale);
+    const paid = getSalePaid(sale);
+
+    return Math.max(
+      total - paid,
+      0
+    );
+  };
+
+  const getSaleItems = (sale) => {
+    if (Array.isArray(sale?.items)) {
+      return sale.items;
+    }
+
+    if (Array.isArray(sale?.sale_items)) {
+      return sale.sale_items;
+    }
+
+    if (Array.isArray(sale?.details)) {
+      return sale.details;
+    }
+
+    return [];
+  };
+
+  const getItemQuantity = (item) => {
+    return Number(
+      item?.quantity ??
+      item?.qty ??
+      0
+    );
+  };
+
+  const getItemUnit = (item) => {
+    return String(
+      item?.unit || ""
+    ).toLowerCase();
+  };
+
+  const isEggItem = (item) => {
+    if (item?.is_egg === true) {
+      return true;
+    }
+
+    const product = String(
+      item?.product ||
+      item?.product_name ||
+      ""
+    ).toLowerCase();
+
+    return (
+      product.includes("egg") ||
+      product.includes("mayai")
+    );
+  };
+
+  const getSaleEggs = (sale) => {
+    let eggs = 0;
+
+    getSaleItems(sale).forEach(
+      (item) => {
+        if (!isEggItem(item)) {
+          return;
+        }
+
+        const quantity =
+          getItemQuantity(item);
+
+        const unit =
+          getItemUnit(item);
+
+        if (unit === "tray") {
+          eggs += quantity * 30;
+        } else {
+          eggs += quantity;
+        }
+      }
+    );
+
+    return eggs;
+  };
+
+  const getSaleTrays = (sale) => {
+    let trays = 0;
+
+    getSaleItems(sale).forEach(
+      (item) => {
+        if (!isEggItem(item)) {
+          return;
+        }
+
+        const quantity =
+          getItemQuantity(item);
+
+        const unit =
+          getItemUnit(item);
+
+        if (unit === "tray") {
+          trays += quantity;
+        }
+      }
+    );
+
+    return trays;
+  };
+
+  /* =========================================================
+     PAYMENT HELPERS
+  ========================================================= */
+
+  const getPaymentDate = (payment) => {
+    return (
+      payment?.date ||
+      payment?.payment_date ||
+      payment?.created_at ||
+      null
+    );
+  };
+
+  const getPaymentAmount = (payment) => {
+    return Number(
+      payment?.amount ??
+      payment?.paid_amount ??
+      0
+    );
+  };
+
+  const getPaymentMethod = (payment) => {
+    return (
+      payment?.payment_method ||
+      payment?.method ||
+      "-"
+    );
+  };
+
+  /* =========================================================
+     LOAD CUSTOMERS
+  ========================================================= */
+
+  const loadCustomers = useCallback(
+    async () => {
+      try {
+        setLoading(true);
+        setError("");
+
+        const response =
+          await api.get(
+            "/customers/"
+          );
+
+        setCustomers(
+          getList(response.data)
+        );
+      } catch (err) {
+        console.error(
+          "Failed to load customers:",
+          err
+        );
+
+        setError(
+          extractError(err)
+        );
+      } finally {
+        setLoading(false);
+      }
+    },
+    []
+  );
+
+  useEffect(() => {
+    loadCustomers();
+  }, [loadCustomers]);
+
+  /* =========================================================
+     FORM HANDLING
+  ========================================================= */
+
+  const handleChange = (event) => {
+    const {
+      name,
+      value,
+      type,
+      checked,
+    } = event.target;
+
+    setForm((previous) => ({
+      ...previous,
+      [name]:
+        type === "checkbox"
+          ? checked
+          : value,
+    }));
+  };
 
   const resetForm = () => {
     setForm(initialForm);
@@ -299,103 +444,34 @@ export default function Customers() {
     setShowForm(false);
   };
 
-  const showSuccess = (message) => {
-    setSuccess(message);
-
-    setTimeout(() => {
-      setSuccess("");
-    }, 3000);
-  };
-
-  const openAddForm = () => {
+  const startCreate = () => {
     setError("");
     setSuccess("");
 
     setForm(initialForm);
     setEditingId(null);
     setShowForm(true);
-
-    window.scrollTo({
-      top: 0,
-      behavior: "smooth",
-    });
   };
 
-  const handleChange = (e) => {
-    const { name, value } = e.target;
-
-    setForm((current) => ({
-      ...current,
-      [name]: value,
-    }));
-  };
-
-  /*
-  |--------------------------------------------------------------------------
-  | Save Customer
-  |--------------------------------------------------------------------------
-  */
-
-  const save = async (e) => {
-    e.preventDefault();
-
+  const startEdit = (customer) => {
     setError("");
     setSuccess("");
-
-    if (!form.name.trim()) {
-      setError("Customer name is required.");
-      return;
-    }
-
-    setSaving(true);
-
-    const payload = {
-      name: form.name.trim(),
-      phone: form.phone.trim(),
-      location: form.location.trim(),
-    };
-
-    try {
-      if (editingId) {
-        await api.patch(
-          `/customers/${editingId}/`,
-          payload
-        );
-
-        showSuccess("Customer updated successfully.");
-      } else {
-        await api.post("/customers/", payload);
-
-        showSuccess("Customer added successfully.");
-      }
-
-      resetForm();
-
-      await loadCustomers();
-    } catch (err) {
-      setError(extractError(err));
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  /*
-  |--------------------------------------------------------------------------
-  | Edit Customer
-  |--------------------------------------------------------------------------
-  */
-
-  const editCustomer = (customer) => {
-    setError("");
-    setSuccess("");
-
-    setEditingId(customer.id);
 
     setForm({
-      name: customer.name || "",
-      phone: customer.phone || "",
-      location: customer.location || "",
+      name: customer?.name || "",
+      phone: customer?.phone || "",
+      email: customer?.email || "",
+      address:
+        customer?.address ||
+        customer?.location ||
+        "",
+      active:
+        customer?.active !== false,
     });
+
+    setEditingId(
+      customer?.id
+    );
 
     setShowForm(true);
 
@@ -405,1233 +481,1911 @@ export default function Customers() {
     });
   };
 
-  /*
-  |--------------------------------------------------------------------------
-  | Delete Customer
-  |--------------------------------------------------------------------------
-  */
+  /* =========================================================
+     SAVE CUSTOMER
+  ========================================================= */
 
-  const deleteCustomer = async (id) => {
-    const confirmed = window.confirm(
-      "Are you sure you want to delete this customer?"
-    );
+  const handleSubmit = async (
+    event
+  ) => {
+    event.preventDefault();
+
+    setError("");
+    setSuccess("");
+
+    if (!form.name.trim()) {
+      setError(
+        "Customer name is required."
+      );
+      return;
+    }
+
+    try {
+      setSaving(true);
+
+      const payload = {
+        name: form.name.trim(),
+        phone: form.phone.trim(),
+        email: form.email.trim(),
+        address:
+          form.address.trim(),
+        active: form.active,
+      };
+
+      if (editingId) {
+        await api.patch(
+          `/customers/${editingId}/`,
+          payload
+        );
+
+        showSuccess(
+          "Customer updated successfully."
+        );
+      } else {
+        await api.post(
+          "/customers/",
+          payload
+        );
+
+        showSuccess(
+          "Customer added successfully."
+        );
+      }
+
+      resetForm();
+
+      await loadCustomers();
+    } catch (err) {
+      console.error(
+        "Failed to save customer:",
+        err
+      );
+
+      setError(
+        extractError(err)
+      );
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  /* =========================================================
+     DELETE CUSTOMER
+  ========================================================= */
+
+  const handleDelete = async (
+    customer
+  ) => {
+    if (!customer?.id) {
+      return;
+    }
+
+    const confirmed =
+      window.confirm(
+        `Are you sure you want to delete "${customer.name}"?`
+      );
 
     if (!confirmed) {
       return;
     }
 
-    setDeletingId(id);
-    setError("");
-    setSuccess("");
-
     try {
-      await api.delete(`/customers/${id}/`);
+      setDeletingId(
+        customer.id
+      );
 
-      showSuccess("Customer deleted successfully.");
+      setError("");
+      setSuccess("");
 
-      if (editingId === id) {
-        resetForm();
+      await api.delete(
+        `/customers/${customer.id}/`
+      );
+
+      if (
+        selectedCustomer?.id ===
+        customer.id
+      ) {
+        setSelectedCustomer(null);
+        setCustomerSales([]);
+        setCustomerPayments([]);
       }
 
-      if (selectedCustomer?.id === id) {
-        closeCustomerDetails();
-      }
+      showSuccess(
+        "Customer deleted successfully."
+      );
 
       await loadCustomers();
     } catch (err) {
-      setError(extractError(err));
+      console.error(
+        "Failed to delete customer:",
+        err
+      );
+
+      setError(
+        extractError(err)
+      );
     } finally {
       setDeletingId(null);
     }
   };
 
-  /*
-  |--------------------------------------------------------------------------
-  | Open Customer Details
-  |--------------------------------------------------------------------------
-  */
+  /* =========================================================
+     CUSTOMER DETAILS
+  ========================================================= */
 
-  const openCustomerDetails = async (customer) => {
-    setSelectedCustomer(customer);
-    setCustomerSales([]);
-    setCustomerPayments([]);
-    setDetailsError("");
-    setDetailsLoading(true);
+  const openCustomerDetails =
+    async (customer) => {
+      if (!customer?.id) {
+        return;
+      }
 
-    window.scrollTo({
-      top: 0,
-      behavior: "smooth",
-    });
-
-    try {
-      /*
-       * --------------------------------------------------------
-       * SALES
-       * --------------------------------------------------------
-       *
-       * Your backend supports:
-       *
-       * /sales/?customer=<id>
-       *
-       * SaleSerializer returns:
-       *
-       * {
-       *   total,
-       *   amount_paid,
-       *   balance,
-       *   items: [...]
-       * }
-       */
-      const salesResponse = await api.get(
-        `/sales/?customer=${customer.id}`
+      setSelectedCustomer(
+        customer
       );
 
-      const sales = getList(salesResponse);
+      setCustomerSales([]);
+      setCustomerPayments([]);
+      setDetailsError("");
+      setDetailsLoading(true);
 
-      /*
-       * Extra frontend filtering in case the backend
-       * does not apply the filter correctly.
-       */
-      const filteredSales = sales.filter((sale) => {
-        const saleCustomerId = getCustomerId(sale);
-
-        /*
-         * If the API does not serialize customer ID,
-         * keep the sale because it came from the
-         * customer-filtered endpoint.
-         */
-        if (
-          saleCustomerId === undefined ||
-          saleCustomerId === null ||
-          saleCustomerId === ""
-        ) {
-          return true;
-        }
-
-        return (
-          String(saleCustomerId) ===
-          String(customer.id)
-        );
-      });
-
-      setCustomerSales(filteredSales);
-
-      /*
-       * --------------------------------------------------------
-       * PAYMENTS
-       * --------------------------------------------------------
-       *
-       * SalePaymentViewSet is normally registered as:
-       *
-       * /sales/payments/
-       *
-       * However, SalePaymentSerializer does NOT expose
-       * customer_id directly.
-       *
-       * It exposes:
-       *
-       * sale
-       * invoice_no
-       * customer_name
-       *
-       * Therefore we don't depend on customer_id here.
-       */
       try {
-        const paymentsResponse = await api.get(
-          `/sales/payments/?sale__customer=${customer.id}`
-        );
-
-        const payments = getList(paymentsResponse);
-
-        setCustomerPayments(payments);
-      } catch (paymentError) {
-        /*
-         * DjangoFilterBackend may not support the
-         * nested sale__customer filter depending on
-         * filterset configuration.
-         *
-         * In that case, load all payments and match
-         * their sale IDs against this customer's sales.
-         */
-        try {
-          const allPaymentsResponse = await api.get(
-            "/sales/payments/"
+        const salesResponse =
+          await api.get(
+            "/sales/",
+            {
+              params: {
+                customer:
+                  customer.id,
+              },
+            }
           );
 
-          const allPayments =
-            getList(allPaymentsResponse);
-
-          const customerSaleIds = new Set(
-            filteredSales.map((sale) =>
-              String(sale.id)
-            )
+        let sales =
+          getList(
+            salesResponse.data
           );
 
-          const filteredPayments = allPayments.filter(
-            (payment) =>
-              payment?.sale &&
-              customerSaleIds.has(
-                String(
-                  payment.sale?.id ??
-                    payment.sale
+        sales =
+          sales.filter(
+            (sale) =>
+              Number(
+                getCustomerId(
+                  sale
                 )
+              ) ===
+              Number(
+                customer.id
               )
           );
 
-          setCustomerPayments(filteredPayments);
-        } catch (fallbackError) {
+        setCustomerSales(
+          sales
+        );
+
+        try {
+          const paymentResponse =
+            await api.get(
+              "/sale-payments/",
+              {
+                params: {
+                  "sale__customer":
+                    customer.id,
+                },
+              }
+            );
+
+          let payments =
+            getList(
+              paymentResponse.data
+            );
+
+          const saleIds =
+            sales.map(
+              (sale) =>
+                sale.id
+            );
+
+          payments =
+            payments.filter(
+              (payment) => {
+                const saleId =
+                  typeof payment?.sale ===
+                  "object"
+                    ? payment?.sale?.id
+                    : payment?.sale_id ||
+                      payment?.sale;
+
+                return saleIds.includes(
+                  saleId
+                );
+              }
+            );
+
+          setCustomerPayments(
+            payments
+          );
+        } catch (
+          paymentError
+        ) {
           console.warn(
-            "Payment endpoint unavailable:",
-            fallbackError
+            "Primary payment query failed:",
+            paymentError
           );
 
-          setCustomerPayments([]);
+          try {
+            const fallbackResponse =
+              await api.get(
+                "/sale-payments/"
+              );
+
+            let payments =
+              getList(
+                fallbackResponse.data
+              );
+
+            const saleIds =
+              sales.map(
+                (sale) =>
+                  sale.id
+              );
+
+            payments =
+              payments.filter(
+                (payment) => {
+                  const saleId =
+                    typeof payment?.sale ===
+                    "object"
+                      ? payment?.sale?.id
+                      : payment?.sale_id ||
+                        payment?.sale;
+
+                  return saleIds.includes(
+                    saleId
+                  );
+                }
+              );
+
+            setCustomerPayments(
+              payments
+            );
+          } catch (
+            fallbackError
+          ) {
+            console.warn(
+              "Fallback payment query failed:",
+              fallbackError
+            );
+
+            setCustomerPayments(
+              []
+            );
+          }
         }
+      } catch (err) {
+        console.error(
+          "Failed to load customer details:",
+          err
+        );
+
+        setDetailsError(
+          extractError(err)
+        );
+      } finally {
+        setDetailsLoading(
+          false
+        );
       }
-    } catch (err) {
-      setDetailsError(extractError(err));
-    } finally {
-      setDetailsLoading(false);
-    }
-  };
-
-  const closeCustomerDetails = () => {
-    setSelectedCustomer(null);
-    setCustomerSales([]);
-    setCustomerPayments([]);
-    setDetailsError("");
-  };
-
-  /*
-  |--------------------------------------------------------------------------
-  | Search
-  |--------------------------------------------------------------------------
-  */
-
-  const filteredCustomers = useMemo(() => {
-    const keyword = search.trim().toLowerCase();
-
-    if (!keyword) {
-      return data;
-    }
-
-    return data.filter((customer) => {
-      return (
-        String(customer.name || "")
-          .toLowerCase()
-          .includes(keyword) ||
-        String(customer.phone || "")
-          .toLowerCase()
-          .includes(keyword) ||
-        String(customer.location || "")
-          .toLowerCase()
-          .includes(keyword)
-      );
-    });
-  }, [data, search]);
-
-  /*
-  |--------------------------------------------------------------------------
-  | Customer Balance
-  |--------------------------------------------------------------------------
-  */
-
-  const getCustomerBalance = (customer) => {
-    /*
-     * If the customer API already provides balance,
-     * use it for the customer list.
-     *
-     * Detailed customer profile uses the actual
-     * Sale records as the source of truth.
-     */
-    return Number(customer?.balance || 0);
-  };
-
-  /*
-  |--------------------------------------------------------------------------
-  | Total Outstanding
-  |--------------------------------------------------------------------------
-  */
-
-  const totalOutstanding = useMemo(() => {
-    return data.reduce(
-      (sum, customer) =>
-        sum + getCustomerBalance(customer),
-      0
-    );
-  }, [data]);
-
-  /*
-  |--------------------------------------------------------------------------
-  | Customer Details Calculations
-  |--------------------------------------------------------------------------
-  */
-
-  const customerDetails = useMemo(() => {
-    /*
-     * Total eggs purchased.
-     *
-     * IMPORTANT:
-     * Eggs are stored inside SaleItem.
-     */
-    const totalEggs = customerSales.reduce(
-      (sum, sale) =>
-        sum + getSaleEggs(sale),
-      0
-    );
-
-    /*
-     * Total trays purchased.
-     */
-    const totalTrays = customerSales.reduce(
-      (sum, sale) =>
-        sum + getSaleTrays(sale),
-      0
-    );
-
-    /*
-     * Total value of all customer purchases.
-     */
-    const totalPurchases = customerSales.reduce(
-      (sum, sale) =>
-        sum + getSaleTotal(sale),
-      0
-    );
-
-    /*
-     * Total amount actually paid.
-     *
-     * IMPORTANT:
-     *
-     * Sale.amount_paid is cumulative.
-     *
-     * Therefore:
-     *
-     * totalPayments =
-     *     SUM(Sale.amount_paid)
-     *
-     * NOT:
-     *
-     * SUM(SalePayment.amount)
-     *
-     * because SalePayment may only contain
-     * additional payments.
-     */
-    const totalPayments = customerSales.reduce(
-      (sum, sale) =>
-        sum + getSalePaid(sale),
-      0
-    );
-
-    /*
-     * Outstanding customer balance.
-     *
-     * This is calculated from every sale:
-     *
-     * total - cumulative paid
-     */
-    const remainingBalance = customerSales.reduce(
-      (sum, sale) =>
-        sum + getSaleBalance(sale),
-      0
-    );
-
-    return {
-      totalEggs,
-      totalTrays,
-      totalPurchases,
-      totalPayments,
-      remainingBalance,
     };
-  }, [customerSales]);
 
-  /*
-  |--------------------------------------------------------------------------
-  | Render Customer Details
-  |--------------------------------------------------------------------------
-  */
+  const closeCustomerDetails =
+    () => {
+      setSelectedCustomer(
+        null
+      );
 
-  const renderCustomerDetails = () => {
-    if (!selectedCustomer) {
-      return null;
-    }
+      setCustomerSales([]);
+      setCustomerPayments([]);
+      setDetailsError("");
+    };
 
-    return (
-      <div className="mb-4">
-        <div className="form-card">
+  /* =========================================================
+     FILTER CUSTOMERS
+  ========================================================= */
 
-          {/* HEADER */}
+  const filteredCustomers =
+    useMemo(() => {
+      const query =
+        String(search || "")
+          .trim()
+          .toLowerCase();
 
-          <div className="d-flex justify-content-between align-items-center mb-4">
+      if (!query) {
+        return customers;
+      }
+
+      return customers.filter(
+        (customer) => {
+          const searchableText = [
+            customer?.name,
+            customer?.phone,
+            customer?.email,
+            customer?.address,
+            customer?.location,
+          ]
+            .filter(Boolean)
+            .join(" ")
+            .toLowerCase();
+
+          return searchableText.includes(
+            query
+          );
+        }
+      );
+    },
+    [
+      customers,
+      search,
+    ]);
+
+  /* =========================================================
+     CUSTOMER SUMMARY
+  ========================================================= */
+
+  const totalCustomers =
+    customers.length;
+
+  const activeCustomers =
+    customers.filter(
+      (customer) =>
+        customer?.active !== false
+    ).length;
+
+  const totalOutstanding =
+    customers.reduce(
+      (
+        total,
+        customer
+      ) =>
+        total +
+        Number(
+          customer?.balance ||
+          customer?.outstanding ||
+          0
+        ),
+      0
+    );
+
+  const totalCustomerSales =
+    customers.reduce(
+      (
+        total,
+        customer
+      ) =>
+        total +
+        Number(
+          customer?.total_purchases ||
+          customer?.total_sales ||
+          0
+        ),
+      0
+    );
+
+  /* =========================================================
+     SELECTED CUSTOMER SUMMARY
+  ========================================================= */
+
+  const customerDetailsSummary =
+    useMemo(() => {
+      const totalEggs =
+        customerSales.reduce(
+          (
+            total,
+            sale
+          ) =>
+            total +
+            getSaleEggs(
+              sale
+            ),
+          0
+        );
+
+      const totalTrays =
+        customerSales.reduce(
+          (
+            total,
+            sale
+          ) =>
+            total +
+            getSaleTrays(
+              sale
+            ),
+          0
+        );
+
+      const totalPurchases =
+        customerSales.reduce(
+          (
+            total,
+            sale
+          ) =>
+            total +
+            getSaleTotal(
+              sale
+            ),
+          0
+        );
+
+      const totalPayments =
+        customerSales.reduce(
+          (
+            total,
+            sale
+          ) =>
+            total +
+            getSalePaid(
+              sale
+            ),
+          0
+        );
+
+      const paymentTransactions =
+        customerPayments.reduce(
+          (
+            total,
+            payment
+          ) =>
+            total +
+            getPaymentAmount(
+              payment
+            ),
+          0
+        );
+
+      const remainingBalance =
+        Math.max(
+          totalPurchases -
+            totalPayments,
+          0
+        );
+
+      return {
+        totalEggs,
+        totalTrays,
+        totalPurchases,
+        totalPayments,
+        paymentTransactions,
+        remainingBalance,
+      };
+    },
+    [
+      customerSales,
+      customerPayments,
+    ]);
+
+  /* =========================================================
+     CUSTOMER PDF REPORT
+  ========================================================= */
+
+  const generateCustomerReport =
+    async () => {
+      setError("");
+      setSuccess("");
+
+      if (!reportFromDate) {
+        setError(
+          "Please select the report start date."
+        );
+        return;
+      }
+
+      if (!reportToDate) {
+        setError(
+          "Please select the report end date."
+        );
+        return;
+      }
+
+      if (
+        reportFromDate >
+        reportToDate
+      ) {
+        setError(
+          "Start date cannot be after end date."
+        );
+        return;
+      }
+
+      try {
+        setExporting(true);
+
+        const response =
+          await api.get(
+            "/reports/customers/pdf/",
+            {
+              params: {
+                from_date:
+                  reportFromDate,
+                to_date:
+                  reportToDate,
+              },
+              responseType:
+                "blob",
+            }
+          );
+
+        const blob =
+          new Blob(
+            [response.data],
+            {
+              type:
+                "application/pdf",
+            }
+          );
+
+        const pdfUrl =
+          window.URL.createObjectURL(
+            blob
+          );
+
+        const newWindow =
+          window.open(
+            pdfUrl,
+            "_blank"
+          );
+
+        if (!newWindow) {
+          setError(
+            "The PDF could not be opened because your browser blocked the new tab. Please allow pop-ups for this site."
+          );
+
+          window.URL.revokeObjectURL(
+            pdfUrl
+          );
+
+          return;
+        }
+
+        showSuccess(
+          "Customer PDF report opened successfully."
+        );
+
+        window.setTimeout(
+          () => {
+            window.URL.revokeObjectURL(
+              pdfUrl
+            );
+          },
+          30000
+        );
+      } catch (err) {
+        console.error(
+          "Customer PDF export error:",
+          err
+        );
+
+        if (
+          err?.response?.data instanceof
+          Blob
+        ) {
+          try {
+            const text =
+              await err.response.data.text();
+
+            const parsed =
+              JSON.parse(text);
+
+            if (
+              parsed?.detail
+            ) {
+              setError(
+                parsed.detail
+              );
+
+              return;
+            }
+          } catch {
+            // Ignore blob parsing errors.
+          }
+        }
+
+        setError(
+          extractError(err)
+        );
+      } finally {
+        setExporting(false);
+      }
+    };
+
+  /* =========================================================
+     RENDER CUSTOMER DETAILS
+  ========================================================= */
+
+  const renderCustomerDetails =
+    () => {
+      if (!selectedCustomer) {
+        return null;
+      }
+
+      return (
+        <div className="mb-4">
+          <div className="d-flex justify-content-between align-items-center mb-3">
             <div>
-              <h5 className="mb-1">
-                <i className="bi bi-person-circle me-2 text-success"></i>
+              <h4 className="mb-1">
                 Customer Details
-              </h5>
+              </h4>
 
-              <small className="text-muted">
-                Customer statement and transaction history
-              </small>
+              <p className="text-muted mb-0">
+                Customer statement and
+                transaction history
+              </p>
             </div>
 
             <button
               type="button"
-              className="btn btn-outline-secondary btn-sm"
-              onClick={closeCustomerDetails}
+              className="btn btn-outline-secondary"
+              onClick={
+                closeCustomerDetails
+              }
             >
-              <i className="bi bi-arrow-left me-1"></i>
+              <i className="bi bi-arrow-left me-2" />
               Back to Customers
             </button>
           </div>
 
-          {/* CUSTOMER PROFILE */}
-
-          <div className="row g-3 mb-4">
-
-            <div className="col-md-4">
-              <div className="border rounded p-3 h-100">
-                <small className="text-muted d-block">
-                  Customer
-                </small>
-
-                <h5 className="mb-1 mt-1">
-                  {selectedCustomer.name}
-                </h5>
-
-                <div className="text-muted">
-                  <i className="bi bi-telephone me-1"></i>
-                  {selectedCustomer.phone || "-"}
-                </div>
-
-                <div className="text-muted">
-                  <i className="bi bi-geo-alt me-1"></i>
-                  {selectedCustomer.location || "-"}
-                </div>
-              </div>
-            </div>
-
-            <div className="col-md-4">
-              <div className="border rounded p-3 h-100">
-                <small className="text-muted d-block">
-                  Total Purchases
-                </small>
-
-                <h5 className="mb-0 mt-1">
-                  TZS{" "}
-                  {formatMoney(
-                    customerDetails.totalPurchases
-                  )}
-                </h5>
-              </div>
-            </div>
-
-            <div className="col-md-4">
-              <div className="border rounded p-3 h-100">
-                <small className="text-muted d-block">
-                  Remaining Balance
-                </small>
-
-                <h5
-                  className={`mb-0 mt-1 ${
-                    customerDetails.remainingBalance > 0
-                      ? "text-danger"
-                      : "text-success"
-                  }`}
-                >
-                  TZS{" "}
-                  {formatMoney(
-                    customerDetails.remainingBalance
-                  )}
-                </h5>
-              </div>
-            </div>
-          </div>
-
-          {/* STAT CARDS */}
-
-          <div className="row g-3 mb-4">
-
-            {/* EGGS */}
-
-            <div className="col-md-3 col-6">
-              <div className="border rounded p-3 h-100">
-                <small className="text-muted">
-                  Eggs Bought
-                </small>
-
-                <h5 className="mb-0 mt-1">
-                  {formatNumber(
-                    customerDetails.totalEggs
-                  )}
-                </h5>
-
-                <small className="text-muted">
-                  eggs
-                </small>
-              </div>
-            </div>
-
-            {/* TRAYS */}
-
-            <div className="col-md-3 col-6">
-              <div className="border rounded p-3 h-100">
-                <small className="text-muted">
-                  Trays Bought
-                </small>
-
-                <h5 className="mb-0 mt-1">
-                  {formatNumber(
-                    customerDetails.totalTrays
-                  )}
-                </h5>
-
-                <small className="text-muted">
-                  trays
-                </small>
-              </div>
-            </div>
-
-            {/* PAYMENTS */}
-
-            <div className="col-md-3 col-6">
-              <div className="border rounded p-3 h-100">
-                <small className="text-muted">
-                  Total Paid
-                </small>
-
-                <h5 className="mb-0 mt-1 text-success">
-                  TZS{" "}
-                  {formatMoney(
-                    customerDetails.totalPayments
-                  )}
-                </h5>
-              </div>
-            </div>
-
-            {/* OUTSTANDING */}
-
-            <div className="col-md-3 col-6">
-              <div className="border rounded p-3 h-100">
-                <small className="text-muted">
-                  Outstanding
-                </small>
-
-                <h5
-                  className={`mb-0 mt-1 ${
-                    customerDetails.remainingBalance > 0
-                      ? "text-danger"
-                      : "text-success"
-                  }`}
-                >
-                  TZS{" "}
-                  {formatMoney(
-                    customerDetails.remainingBalance
-                  )}
-                </h5>
-              </div>
-            </div>
-          </div>
-
-          {/* ERROR */}
-
           {detailsError && (
             <div className="alert alert-danger">
-              <i className="bi bi-exclamation-triangle me-2"></i>
               {detailsError}
             </div>
           )}
 
-          {/* LOADING */}
+          {/* Customer Profile */}
+          <div className="card border-0 shadow-sm mb-4">
+            <div className="card-body">
+              <div className="row g-4">
+                <div className="col-md-4">
+                  <div className="d-flex align-items-center">
+                    <div
+                      className="rounded-circle bg-primary text-white d-flex align-items-center justify-content-center me-3"
+                      style={{
+                        width: 55,
+                        height: 55,
+                      }}
+                    >
+                      <i className="bi bi-person fs-4" />
+                    </div>
+
+                    <div>
+                      <h5 className="mb-1">
+                        {
+                          selectedCustomer.name
+                        }
+                      </h5>
+
+                      <small className="text-muted">
+                        Customer
+                      </small>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="col-md-4">
+                  <div className="mb-2">
+                    <small className="text-muted d-block">
+                      Phone
+                    </small>
+
+                    <span>
+                      {selectedCustomer.phone ||
+                        "-"}
+                    </span>
+                  </div>
+
+                  <div>
+                    <small className="text-muted d-block">
+                      Email
+                    </small>
+
+                    <span>
+                      {selectedCustomer.email ||
+                        "-"}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="col-md-4">
+                  <div className="mb-2">
+                    <small className="text-muted d-block">
+                      Address
+                    </small>
+
+                    <span>
+                      {selectedCustomer.address ||
+                        selectedCustomer.location ||
+                        "-"}
+                    </span>
+                  </div>
+
+                  <div>
+                    <small className="text-muted d-block">
+                      Status
+                    </small>
+
+                    {selectedCustomer.active !==
+                    false ? (
+                      <span className="badge bg-success">
+                        Active
+                      </span>
+                    ) : (
+                      <span className="badge bg-secondary">
+                        Inactive
+                      </span>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Summary Cards */}
+          <div className="row g-3 mb-4">
+            <div className="col-md-3">
+              <div className="card border-0 shadow-sm h-100">
+                <div className="card-body">
+                  <div className="text-muted small mb-1">
+                    Total Purchases
+                  </div>
+
+                  <h4 className="mb-0">
+                    TZS{" "}
+                    {formatMoney(
+                      customerDetailsSummary.totalPurchases
+                    )}
+                  </h4>
+                </div>
+              </div>
+            </div>
+
+            <div className="col-md-3">
+              <div className="card border-0 shadow-sm h-100">
+                <div className="card-body">
+                  <div className="text-muted small mb-1">
+                    Payments
+                  </div>
+
+                  <h4 className="mb-0 text-success">
+                    TZS{" "}
+                    {formatMoney(
+                      customerDetailsSummary.totalPayments
+                    )}
+                  </h4>
+                </div>
+              </div>
+            </div>
+
+            <div className="col-md-3">
+              <div className="card border-0 shadow-sm h-100">
+                <div className="card-body">
+                  <div className="text-muted small mb-1">
+                    Outstanding
+                  </div>
+
+                  <h4 className="mb-0 text-danger">
+                    TZS{" "}
+                    {formatMoney(
+                      customerDetailsSummary.remainingBalance
+                    )}
+                  </h4>
+                </div>
+              </div>
+            </div>
+
+            <div className="col-md-3">
+              <div className="card border-0 shadow-sm h-100">
+                <div className="card-body">
+                  <div className="text-muted small mb-1">
+                    Eggs Purchased
+                  </div>
+
+                  <h4 className="mb-0">
+                    {formatNumber(
+                      customerDetailsSummary.totalEggs
+                    )}
+                  </h4>
+
+                  <small className="text-muted">
+                    {formatNumber(
+                      customerDetailsSummary.totalTrays
+                    )}{" "}
+                    trays
+                  </small>
+                </div>
+              </div>
+            </div>
+          </div>
 
           {detailsLoading ? (
-            <div className="text-center py-5">
-              <div className="spinner-border text-success"></div>
+            <div className="card border-0 shadow-sm">
+              <div className="card-body text-center py-5">
+                <div
+                  className="spinner-border text-primary"
+                  role="status"
+                />
 
-              <div className="mt-2 text-muted">
-                Loading customer transactions...
+                <p className="text-muted mt-3 mb-0">
+                  Loading customer
+                  transactions...
+                </p>
               </div>
             </div>
           ) : (
             <>
-              {/* PURCHASE HISTORY */}
+              {/* Purchase History */}
+              <div className="card border-0 shadow-sm mb-4">
+                <div className="card-header bg-white border-0 py-3">
+                  <div className="d-flex justify-content-between align-items-center">
+                    <div>
+                      <h5 className="mb-1">
+                        Egg Purchase History
+                      </h5>
 
-              <div className="table-card mb-4">
+                      <small className="text-muted">
+                        All egg purchases made by this customer
+                      </small>
+                    </div>
 
-                <div className="p-3 border-bottom">
-                  <h5 className="mb-1">
-                    <i className="bi bi-cart-check me-2 text-success"></i>
-                    Purchase History
-                  </h5>
-
-                  <small className="text-muted">
-                    All purchases made by this customer
-                  </small>
+                    <span className="badge bg-primary">
+                      {
+                        customerSales.length
+                      }{" "}
+                      transaction
+                      {customerSales.length ===
+                      1
+                        ? ""
+                        : "s"}
+                    </span>
+                  </div>
                 </div>
 
-                <div className="table-responsive">
+                <div className="card-body p-0">
+                  {customerSales.length ===
+                  0 ? (
+                    <div className="text-center py-5">
+                      <i className="bi bi-receipt fs-1 text-muted" />
 
-                  <table className="table align-middle mb-0">
+                      <h6 className="mt-3">
+                        No purchases found
+                      </h6>
 
-                    <thead>
-                      <tr>
-                        <th>Date</th>
-                        <th>Invoice</th>
-                        <th>Eggs</th>
-                        <th>Trays</th>
-                        <th>Amount</th>
-                        <th>Paid</th>
-                        <th>Balance</th>
-                        <th>Status</th>
-                      </tr>
-                    </thead>
+                      <p className="text-muted mb-0">
+                        This customer has no
+                        sales transactions.
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="table-responsive">
+                      <table className="table table-hover align-middle mb-0">
+                        <thead className="table-light">
+                          <tr>
+                            <th>#</th>
+                            <th>Date</th>
+                            <th>Invoice</th>
+                            <th>Eggs</th>
+                            <th>Trays</th>
+                            <th>Total</th>
+                            <th>Paid</th>
+                            <th>Balance</th>
+                            <th>Method</th>
+                          </tr>
+                        </thead>
 
-                    <tbody>
-
-                      {customerSales.length === 0 ? (
-                        <tr>
-                          <td
-                            colSpan="8"
-                            className="text-center py-5 text-muted"
-                          >
-                            <i className="bi bi-cart-x fs-2 d-block mb-2"></i>
-
-                            No purchase records found
-                            for this customer.
-                          </td>
-                        </tr>
-                      ) : (
-                        customerSales.map(
-                          (sale, index) => {
-
-                            const amount =
-                              getSaleTotal(sale);
-
-                            const paid =
-                              getSalePaid(sale);
-
-                            const balance =
-                              getSaleBalance(sale);
-
-                            const eggs =
-                              getSaleEggs(sale);
-
-                            const trays =
-                              getSaleTrays(sale);
-
-                            return (
+                        <tbody>
+                          {customerSales.map(
+                            (
+                              sale,
+                              index
+                            ) => (
                               <tr
                                 key={
                                   sale.id ||
-                                  `sale-${index}`
+                                  index
                                 }
                               >
+                                <td>
+                                  {index +
+                                    1}
+                                </td>
 
                                 <td>
                                   {formatDate(
-                                    getSaleDate(sale)
+                                    getSaleDate(
+                                      sale
+                                    )
                                   )}
                                 </td>
 
                                 <td>
-                                  <strong>
+                                  <span className="fw-semibold">
                                     {sale.invoice_no ||
+                                      sale.invoice ||
                                       "-"}
-                                  </strong>
+                                  </span>
                                 </td>
 
                                 <td>
-                                  {formatNumber(eggs)}
+                                  {formatNumber(
+                                    getSaleEggs(
+                                      sale
+                                    )
+                                  )}
                                 </td>
 
                                 <td>
-                                  {formatNumber(trays)}
+                                  {formatNumber(
+                                    getSaleTrays(
+                                      sale
+                                    )
+                                  )}
                                 </td>
 
                                 <td>
                                   TZS{" "}
-                                  {formatMoney(amount)}
+                                  {formatMoney(
+                                    getSaleTotal(
+                                      sale
+                                    )
+                                  )}
                                 </td>
 
                                 <td className="text-success">
                                   TZS{" "}
-                                  {formatMoney(paid)}
-                                </td>
-
-                                <td
-                                  className={
-                                    balance > 0
-                                      ? "text-danger fw-semibold"
-                                      : "text-success"
-                                  }
-                                >
-                                  TZS{" "}
-                                  {formatMoney(balance)}
-                                </td>
-
-                                <td>
-                                  {sale.payment_status ===
-                                  "paid" ? (
-                                    <span className="badge bg-success">
-                                      Paid
-                                    </span>
-                                  ) : sale.payment_status ===
-                                    "partial" ? (
-                                    <span className="badge bg-warning text-dark">
-                                      Partial
-                                    </span>
-                                  ) : (
-                                    <span className="badge bg-danger">
-                                      Unpaid
-                                    </span>
+                                  {formatMoney(
+                                    getSalePaid(
+                                      sale
+                                    )
                                   )}
                                 </td>
 
-                              </tr>
-                            );
-                          }
-                        )
-                      )}
+                                <td>
+                                  <span
+                                    className={
+                                      getSaleBalance(
+                                        sale
+                                      ) >
+                                      0
+                                        ? "text-danger fw-semibold"
+                                        : "text-success fw-semibold"
+                                    }
+                                  >
+                                    TZS{" "}
+                                    {formatMoney(
+                                      getSaleBalance(
+                                        sale
+                                      )
+                                    )}
+                                  </span>
+                                </td>
 
-                    </tbody>
-                  </table>
+                                <td>
+                                  {sale.payment_method ||
+                                    "-"}
+                                </td>
+                              </tr>
+                            )
+                          )}
+                        </tbody>
+
+                        <tfoot className="table-light">
+                          <tr>
+                            <th
+                              colSpan="3"
+                              className="text-end"
+                            >
+                              Totals:
+                            </th>
+
+                            <th>
+                              {formatNumber(
+                                customerDetailsSummary.totalEggs
+                              )}
+                            </th>
+
+                            <th>
+                              {formatNumber(
+                                customerDetailsSummary.totalTrays
+                              )}
+                            </th>
+
+                            <th>
+                              TZS{" "}
+                              {formatMoney(
+                                customerDetailsSummary.totalPurchases
+                              )}
+                            </th>
+
+                            <th className="text-success">
+                              TZS{" "}
+                              {formatMoney(
+                                customerDetailsSummary.totalPayments
+                              )}
+                            </th>
+
+                            <th className="text-danger">
+                              TZS{" "}
+                              {formatMoney(
+                                customerDetailsSummary.remainingBalance
+                              )}
+                            </th>
+
+                            <th />
+                          </tr>
+                        </tfoot>
+                      </table>
+                    </div>
+                  )}
                 </div>
               </div>
 
-              {/* PAYMENT HISTORY */}
-
-              <div className="table-card">
-
-                <div className="p-3 border-bottom">
+              {/* Payment History */}
+              <div className="card border-0 shadow-sm">
+                <div className="card-header bg-white border-0 py-3">
                   <h5 className="mb-1">
-                    <i className="bi bi-cash-stack me-2 text-success"></i>
-                    Additional Payment History
+                    Payments
                   </h5>
 
                   <small className="text-muted">
-                    Individual additional payments received
-                    from this customer
+                    Payment transactions recorded
+                    for this customer
                   </small>
                 </div>
 
-                <div className="table-responsive">
+                <div className="card-body p-0">
+                  {customerPayments.length ===
+                  0 ? (
+                    <div className="text-center py-5">
+                      <i className="bi bi-cash-stack fs-1 text-muted" />
 
-                  <table className="table align-middle mb-0">
+                      <h6 className="mt-3">
+                        No payment transactions
+                      </h6>
 
-                    <thead>
-                      <tr>
-                        <th>Date</th>
-                        <th>Invoice</th>
-                        <th>Amount</th>
-                        <th>Payment Method</th>
-                        <th>Reference</th>
-                      </tr>
-                    </thead>
+                      <p className="text-muted mb-0">
+                        No individual payment
+                        transactions were found.
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="table-responsive">
+                      <table className="table table-hover align-middle mb-0">
+                        <thead className="table-light">
+                          <tr>
+                            <th>#</th>
+                            <th>Date</th>
+                            <th>Invoice</th>
+                            <th>Amount</th>
+                            <th>Method</th>
+                            <th>Reference</th>
+                            <th>Notes</th>
+                          </tr>
+                        </thead>
 
-                    <tbody>
+                        <tbody>
+                          {customerPayments.map(
+                            (
+                              payment,
+                              index
+                            ) => {
+                              const sale =
+                                customerSales.find(
+                                  (
+                                    item
+                                  ) => {
+                                    const saleId =
+                                      typeof payment?.sale ===
+                                      "object"
+                                        ? payment?.sale?.id
+                                        : payment?.sale_id ||
+                                          payment?.sale;
 
-                      {customerPayments.length === 0 ? (
-                        <tr>
-                          <td
-                            colSpan="5"
-                            className="text-center py-5 text-muted"
-                          >
-                            <i className="bi bi-wallet2 fs-2 d-block mb-2"></i>
+                                    return (
+                                      Number(
+                                        item.id
+                                      ) ===
+                                      Number(
+                                        saleId
+                                      )
+                                    );
+                                  }
+                                );
 
-                            No additional payment
-                            records found.
-                          </td>
-                        </tr>
-                      ) : (
-                        customerPayments.map(
-                          (payment, index) => {
+                              return (
+                                <tr
+                                  key={
+                                    payment.id ||
+                                    index
+                                  }
+                                >
+                                  <td>
+                                    {index +
+                                      1}
+                                  </td>
 
-                            return (
-                              <tr
-                                key={
-                                  payment.id ||
-                                  `payment-${index}`
-                                }
-                              >
+                                  <td>
+                                    {formatDate(
+                                      getPaymentDate(
+                                        payment
+                                      )
+                                    )}
+                                  </td>
 
-                                <td>
-                                  {formatDate(
-                                    getPaymentDate(
+                                  <td>
+                                    {sale?.invoice_no ||
+                                      payment?.invoice_no ||
+                                      "-"}
+                                  </td>
+
+                                  <td className="text-success fw-semibold">
+                                    TZS{" "}
+                                    {formatMoney(
+                                      getPaymentAmount(
+                                        payment
+                                      )
+                                    )}
+                                  </td>
+
+                                  <td>
+                                    {getPaymentMethod(
                                       payment
-                                    )
-                                  )}
-                                </td>
+                                    )}
+                                  </td>
 
-                                <td>
-                                  {payment.invoice_no ||
-                                    payment.sale?.invoice_no ||
-                                    "-"}
-                                </td>
+                                  <td>
+                                    {payment?.reference ||
+                                      "-"}
+                                  </td>
 
-                                <td className="text-success fw-semibold">
-                                  TZS{" "}
-                                  {formatMoney(
-                                    getPaymentAmount(
-                                      payment
-                                    )
-                                  )}
-                                </td>
+                                  <td>
+                                    {payment?.notes ||
+                                      "-"}
+                                  </td>
+                                </tr>
+                              );
+                            }
+                          )}
+                        </tbody>
 
-                                <td>
-                                  {getPaymentMethod(
-                                    payment
-                                  )}
-                                </td>
+                        <tfoot className="table-light">
+                          <tr>
+                            <th
+                              colSpan="3"
+                              className="text-end"
+                            >
+                              Total Payments:
+                            </th>
 
-                                <td>
-                                  {payment.reference ||
-                                    payment.transaction_reference ||
-                                    payment.receipt_number ||
-                                    "-"}
-                                </td>
+                            <th className="text-success">
+                              TZS{" "}
+                              {formatMoney(
+                                customerDetailsSummary.paymentTransactions
+                              )}
+                            </th>
 
-                              </tr>
-                            );
-                          }
-                        )
-                      )}
-
-                    </tbody>
-                  </table>
+                            <th
+                              colSpan="3"
+                            />
+                          </tr>
+                        </tfoot>
+                      </table>
+                    </div>
+                  )}
                 </div>
               </div>
             </>
           )}
         </div>
-      </div>
-    );
-  };
+      );
+    };
 
-  /*
-  |--------------------------------------------------------------------------
-  | Main Render
-  |--------------------------------------------------------------------------
-  */
+  /* =========================================================
+     MAIN RENDER
+  ========================================================= */
 
   return (
-    <>
+    <div className="container-fluid py-3">
       <PageHeader
         title="Customers"
-        subtitle="Manage your farm customers and outstanding balances."
-        action={
-          !showForm &&
-          !selectedCustomer && (
+        subtitle="Manage customers, purchases, payments and outstanding balances"
+        actions={
+          !selectedCustomer ? (
             <button
-              className="btn btn-success"
-              onClick={openAddForm}
+              type="button"
+              className="btn btn-primary"
+              onClick={
+                startCreate
+              }
             >
-              <i className="bi bi-plus-lg me-2"></i>
+              <i className="bi bi-person-plus me-2" />
               Add Customer
             </button>
-          )
+          ) : null
         }
       />
 
-      {/* ALERTS */}
-
+      {/* Alerts */}
       {error && (
-        <div className="alert alert-danger alert-dismissible fade show">
+        <div
+          className="alert alert-danger alert-dismissible fade show"
+          role="alert"
+        >
+          <i className="bi bi-exclamation-triangle me-2" />
           {error}
 
           <button
             type="button"
             className="btn-close"
-            onClick={() => setError("")}
-          ></button>
+            onClick={() =>
+              setError("")
+            }
+          />
         </div>
       )}
 
       {success && (
-        <div className="alert alert-success alert-dismissible fade show">
+        <div
+          className="alert alert-success alert-dismissible fade show"
+          role="alert"
+        >
+          <i className="bi bi-check-circle me-2" />
           {success}
 
           <button
             type="button"
             className="btn-close"
-            onClick={() => setSuccess("")}
-          ></button>
+            onClick={() =>
+              setSuccess("")
+            }
+          />
         </div>
       )}
 
-      {/* CUSTOMER DETAILS */}
-
+      {/* Customer Details */}
       {selectedCustomer ? (
         renderCustomerDetails()
       ) : (
         <>
-          {/* SUMMARY */}
-
+          {/* Summary */}
           <div className="row g-3 mb-4">
+            <div className="col-md-4">
+              <div className="card border-0 shadow-sm h-100">
+                <div className="card-body">
+                  <div className="d-flex justify-content-between">
+                    <div>
+                      <div className="text-muted small">
+                        Total Customers
+                      </div>
 
-            <div className="col-md-6">
-              <div className="form-card h-100">
-                <small className="text-muted">
-                  Total Customers
-                </small>
+                      <h3 className="mb-0">
+                        {formatNumber(
+                          totalCustomers
+                        )}
+                      </h3>
+                    </div>
 
-                <h4 className="mb-0 mt-1">
-                  {data.length.toLocaleString()}
-                </h4>
+                    <i className="bi bi-people fs-2 text-primary" />
+                  </div>
+                </div>
               </div>
             </div>
 
-            <div className="col-md-6">
-              <div className="form-card h-100">
-                <small className="text-muted">
-                  Outstanding Balance
-                </small>
+            <div className="col-md-4">
+              <div className="card border-0 shadow-sm h-100">
+                <div className="card-body">
+                  <div className="d-flex justify-content-between">
+                    <div>
+                      <div className="text-muted small">
+                        Active Customers
+                      </div>
 
-                <h4 className="mb-0 mt-1 text-danger">
-                  TZS{" "}
-                  {formatMoney(totalOutstanding)}
-                </h4>
+                      <h3 className="mb-0 text-success">
+                        {formatNumber(
+                          activeCustomers
+                        )}
+                      </h3>
+                    </div>
+
+                    <i className="bi bi-person-check fs-2 text-success" />
+                  </div>
+                </div>
               </div>
             </div>
 
+            <div className="col-md-4">
+              <div className="card border-0 shadow-sm h-100">
+                <div className="card-body">
+                  <div className="d-flex justify-content-between">
+                    <div>
+                      <div className="text-muted small">
+                        Outstanding Balance
+                      </div>
+
+                      <h3 className="mb-0 text-danger">
+                        TZS{" "}
+                        {formatMoney(
+                          totalOutstanding
+                        )}
+                      </h3>
+                    </div>
+
+                    <i className="bi bi-wallet2 fs-2 text-danger" />
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
 
-          {/* ADD / EDIT FORM */}
-
-          {showForm && (
-            <div className="form-card mb-4">
-
+          {/* Customer Report */}
+          <div className="card border-0 shadow-sm mb-4">
+            <div className="card-body">
               <div className="d-flex justify-content-between align-items-center mb-3">
+                <div>
+                  <h5 className="mb-1">
+                    Customer Report
+                  </h5>
 
-                <h5 className="mb-0">
-                  {editingId
-                    ? "Edit Customer"
-                    : "Add Customer"}
-                </h5>
+                  <p className="text-muted mb-0 small">
+                    Generate a professional PDF
+                    report containing customer
+                    purchases, payments and
+                    outstanding balances.
+                  </p>
+                </div>
 
-                <button
-                  type="button"
-                  className="btn btn-outline-secondary btn-sm"
-                  onClick={resetForm}
-                >
-                  <i className="bi bi-x-lg me-1"></i>
-                  Cancel
-                </button>
-
+                <i className="bi bi-file-earmark-pdf fs-2 text-danger" />
               </div>
 
-              <form onSubmit={save}>
+              <div className="row g-3 align-items-end">
+                <div className="col-md-4">
+                  <label className="form-label">
+                    From Date
+                  </label>
 
-                <div className="row g-3">
-
-                  {/* NAME */}
-
-                  <div className="col-md-4">
-                    <label className="form-label">
-                      Customer Name
-                    </label>
-
-                    <input
-                      type="text"
-                      name="name"
-                      className="form-control"
-                      value={form.name}
-                      onChange={handleChange}
-                      placeholder="Enter customer name"
-                      required
-                    />
-                  </div>
-
-                  {/* PHONE */}
-
-                  <div className="col-md-4">
-                    <label className="form-label">
-                      Phone
-                    </label>
-
-                    <input
-                      type="text"
-                      name="phone"
-                      className="form-control"
-                      value={form.phone}
-                      onChange={handleChange}
-                      placeholder="e.g. 0712 345 678"
-                    />
-                  </div>
-
-                  {/* LOCATION */}
-
-                  <div className="col-md-4">
-                    <label className="form-label">
-                      Location
-                    </label>
-
-                    <input
-                      type="text"
-                      name="location"
-                      className="form-control"
-                      value={form.location}
-                      onChange={handleChange}
-                      placeholder="e.g. Dodoma"
-                    />
-                  </div>
-
-                  {/* BUTTONS */}
-
-                  <div className="col-12">
-
-                    <button
-                      type="submit"
-                      className="btn btn-success me-2"
-                      disabled={saving}
-                    >
-                      {saving ? (
-                        <>
-                          <span className="spinner-border spinner-border-sm me-2"></span>
-                          Saving...
-                        </>
-                      ) : (
-                        <>
-                          <i className="bi bi-check-lg me-1"></i>
-                          {editingId
-                            ? "Update Customer"
-                            : "Save Customer"}
-                        </>
-                      )}
-                    </button>
-
-                    <button
-                      type="button"
-                      className="btn btn-outline-secondary"
-                      onClick={resetForm}
-                      disabled={saving}
-                    >
-                      Cancel
-                    </button>
-
-                  </div>
-
+                  <input
+                    type="date"
+                    className="form-control"
+                    value={
+                      reportFromDate
+                    }
+                    onChange={(event) =>
+                      setReportFromDate(
+                        event.target.value
+                      )
+                    }
+                  />
                 </div>
-              </form>
+
+                <div className="col-md-4">
+                  <label className="form-label">
+                    To Date
+                  </label>
+
+                  <input
+                    type="date"
+                    className="form-control"
+                    value={
+                      reportToDate
+                    }
+                    onChange={(event) =>
+                      setReportToDate(
+                        event.target.value
+                      )
+                    }
+                  />
+                </div>
+
+                <div className="col-md-4">
+                  <button
+                    type="button"
+                    className="btn btn-success w-100"
+                    onClick={
+                      generateCustomerReport
+                    }
+                    disabled={
+                      exporting
+                    }
+                  >
+                    {exporting ? (
+                      <>
+                        <span
+                          className="spinner-border spinner-border-sm me-2"
+                          role="status"
+                          aria-hidden="true"
+                        />
+
+                        Generating PDF...
+                      </>
+                    ) : (
+                      <>
+                        <i className="bi bi-file-earmark-pdf me-2" />
+
+                        Generate PDF Report
+                      </>
+                    )}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Add / Edit Form */}
+          {showForm && (
+            <div className="card border-0 shadow-sm mb-4">
+              <div className="card-header bg-white border-0 py-3">
+                <div className="d-flex justify-content-between align-items-center">
+                  <div>
+                    <h5 className="mb-1">
+                      {editingId
+                        ? "Edit Customer"
+                        : "Add Customer"}
+                    </h5>
+
+                    <small className="text-muted">
+                      Enter customer information
+                    </small>
+                  </div>
+
+                  <button
+                    type="button"
+                    className="btn-close"
+                    onClick={
+                      resetForm
+                    }
+                  />
+                </div>
+              </div>
+
+              <div className="card-body">
+                <form
+                  onSubmit={
+                    handleSubmit
+                  }
+                >
+                  <div className="row g-3">
+                    <div className="col-md-6">
+                      <label className="form-label">
+                        Customer Name{" "}
+                        <span className="text-danger">
+                          *
+                        </span>
+                      </label>
+
+                      <input
+                        type="text"
+                        name="name"
+                        className="form-control"
+                        value={
+                          form.name
+                        }
+                        onChange={
+                          handleChange
+                        }
+                        placeholder="Enter customer name"
+                        required
+                      />
+                    </div>
+
+                    <div className="col-md-6">
+                      <label className="form-label">
+                        Phone
+                      </label>
+
+                      <input
+                        type="text"
+                        name="phone"
+                        className="form-control"
+                        value={
+                          form.phone
+                        }
+                        onChange={
+                          handleChange
+                        }
+                        placeholder="Enter phone number"
+                      />
+                    </div>
+
+                    <div className="col-md-6">
+                      <label className="form-label">
+                        Email
+                      </label>
+
+                      <input
+                        type="email"
+                        name="email"
+                        className="form-control"
+                        value={
+                          form.email
+                        }
+                        onChange={
+                          handleChange
+                        }
+                        placeholder="Enter email address"
+                      />
+                    </div>
+
+                    <div className="col-md-6">
+                      <label className="form-label">
+                        Address
+                      </label>
+
+                      <input
+                        type="text"
+                        name="address"
+                        className="form-control"
+                        value={
+                          form.address
+                        }
+                        onChange={
+                          handleChange
+                        }
+                        placeholder="Enter customer address"
+                      />
+                    </div>
+
+                    <div className="col-12">
+                      <div className="form-check">
+                        <input
+                          type="checkbox"
+                          name="active"
+                          id="customer-active"
+                          className="form-check-input"
+                          checked={
+                            form.active
+                          }
+                          onChange={
+                            handleChange
+                          }
+                        />
+
+                        <label
+                          htmlFor="customer-active"
+                          className="form-check-label"
+                        >
+                          Active Customer
+                        </label>
+                      </div>
+                    </div>
+
+                    <div className="col-12">
+                      <div className="d-flex justify-content-end gap-2">
+                        <button
+                          type="button"
+                          className="btn btn-outline-secondary"
+                          onClick={
+                            resetForm
+                          }
+                          disabled={
+                            saving
+                          }
+                        >
+                          Cancel
+                        </button>
+
+                        <button
+                          type="submit"
+                          className="btn btn-primary"
+                          disabled={
+                            saving
+                          }
+                        >
+                          {saving ? (
+                            <>
+                              <span
+                                className="spinner-border spinner-border-sm me-2"
+                                role="status"
+                                aria-hidden="true"
+                              />
+
+                              Saving...
+                            </>
+                          ) : (
+                            <>
+                              <i className="bi bi-check-lg me-2" />
+
+                              {editingId
+                                ? "Update Customer"
+                                : "Save Customer"}
+                            </>
+                          )}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </form>
+              </div>
             </div>
           )}
 
-          {/* CUSTOMERS TABLE */}
+          {/* Customer List */}
+          <div className="card border-0 shadow-sm">
+            <div className="card-header bg-white border-0 py-3">
+              <div className="row g-3 align-items-center">
+                <div className="col-md-6">
+                  <h5 className="mb-1">
+                    Customers
+                  </h5>
 
-          <div className="table-card">
+                  <small className="text-muted">
+                    {formatNumber(
+                      filteredCustomers.length
+                    )}{" "}
+                    customer
+                    {filteredCustomers.length ===
+                    1
+                      ? ""
+                      : "s"}{" "}
+                    found
+                  </small>
+                </div>
 
-            <div className="d-flex justify-content-between align-items-center p-3">
+                <div className="col-md-6">
+                  <div className="input-group">
+                    <span className="input-group-text bg-white">
+                      <i className="bi bi-search" />
+                    </span>
 
-              <div>
-                <h5 className="mb-1">
-                  Customer Records
-                </h5>
+                    <input
+                      type="text"
+                      className="form-control"
+                      placeholder="Search customers..."
+                      value={search}
+                      onChange={(event) =>
+                        setSearch(
+                          event.target.value
+                        )
+                      }
+                    />
 
-                <small className="text-muted">
-                  {filteredCustomers.length} customer
-                  {filteredCustomers.length !== 1
-                    ? "s"
-                    : ""}
-                </small>
-              </div>
-
-              <div
-                style={{
-                  maxWidth: "320px",
-                  width: "100%",
-                }}
-              >
-                <div className="input-group">
-
-                  <span className="input-group-text">
-                    <i className="bi bi-search"></i>
-                  </span>
-
-                  <input
-                    type="text"
-                    className="form-control"
-                    placeholder="Search customers..."
-                    value={search}
-                    onChange={(e) =>
-                      setSearch(e.target.value)
-                    }
-                  />
-
+                    {search && (
+                      <button
+                        type="button"
+                        className="btn btn-outline-secondary"
+                        onClick={() =>
+                          setSearch("")
+                        }
+                      >
+                        <i className="bi bi-x-lg" />
+                      </button>
+                    )}
+                  </div>
                 </div>
               </div>
-
             </div>
 
-            <div className="table-responsive">
+            <div className="card-body p-0">
+              {loading ? (
+                <div className="text-center py-5">
+                  <div
+                    className="spinner-border text-primary"
+                    role="status"
+                  />
 
-              <table className="table align-middle mb-0">
+                  <p className="text-muted mt-3 mb-0">
+                    Loading customers...
+                  </p>
+                </div>
+              ) : filteredCustomers.length ===
+                0 ? (
+                <div className="text-center py-5">
+                  <i className="bi bi-people fs-1 text-muted" />
 
-                <thead>
-                  <tr>
-                    <th>Customer</th>
-                    <th>Phone</th>
-                    <th>Location</th>
-                    <th>Balance</th>
-                    <th>Action</th>
-                  </tr>
-                </thead>
+                  <h6 className="mt-3 mb-1">
+                    No customers found
+                  </h6>
 
-                <tbody>
+                  <p className="text-muted mb-3">
+                    {search
+                      ? "No customers match your search."
+                      : "Start by adding your first customer."}
+                  </p>
 
-                  {loading ? (
-                    <tr>
-                      <td
-                        colSpan="5"
-                        className="text-center py-5"
-                      >
-                        <div className="spinner-border text-success"></div>
+                  {!search && (
+                    <button
+                      type="button"
+                      className="btn btn-primary"
+                      onClick={
+                        startCreate
+                      }
+                    >
+                      <i className="bi bi-person-plus me-2" />
+                      Add Customer
+                    </button>
+                  )}
+                </div>
+              ) : (
+                <div className="table-responsive">
+                  <table className="table table-hover align-middle mb-0">
+                    <thead className="table-light">
+                      <tr>
+                        <th>#</th>
+                        <th>Customer</th>
+                        <th>Phone</th>
+                        <th>Email</th>
+                        <th>Address</th>
+                        <th>Status</th>
+                        <th>Balance</th>
+                        <th className="text-end">
+                          Actions
+                        </th>
+                      </tr>
+                    </thead>
 
-                        <div className="mt-2 text-muted">
-                          Loading customers...
-                        </div>
-                      </td>
-                    </tr>
-                  ) : filteredCustomers.length === 0 ? (
-                    <tr>
-                      <td
-                        colSpan="5"
-                        className="text-center py-5 text-muted"
-                      >
-                        <i className="bi bi-people fs-2 d-block mb-2"></i>
+                    <tbody>
+                      {filteredCustomers.map(
+                        (
+                          customer,
+                          index
+                        ) => {
+                          const balance =
+                            Number(
+                              customer?.balance ??
+                              customer?.outstanding ??
+                              0
+                            );
 
-                        {search
-                          ? "No customers match your search."
-                          : "No customers found."}
-                      </td>
-                    </tr>
-                  ) : (
-                    filteredCustomers.map(
-                      (customer) => {
-
-                        const balance =
-                          getCustomerBalance(
-                            customer
-                          );
-
-                        return (
-                          <tr key={customer.id}>
-
-                            {/* CUSTOMER */}
-
-                            <td>
-                              <button
-                                type="button"
-                                className="btn btn-link p-0 text-decoration-none fw-semibold"
-                                onClick={() =>
-                                  openCustomerDetails(
-                                    customer
-                                  )
-                                }
-                                title="View customer details"
-                              >
-                                <i className="bi bi-person-circle me-2"></i>
-                                {customer.name}
-                              </button>
-                            </td>
-
-                            {/* PHONE */}
-
-                            <td>
-                              {customer.phone || "-"}
-                            </td>
-
-                            {/* LOCATION */}
-
-                            <td>
-                              {customer.location || "-"}
-                            </td>
-
-                            {/* BALANCE */}
-
-                            <td
-                              className={
-                                balance > 0
-                                  ? "text-danger fw-semibold"
-                                  : "text-success"
+                          return (
+                            <tr
+                              key={
+                                customer.id ||
+                                index
                               }
                             >
-                              TZS{" "}
-                              {formatMoney(balance)}
-                            </td>
+                              <td>
+                                {index +
+                                  1}
+                              </td>
 
-                            {/* ACTIONS */}
+                              <td>
+                                <div className="d-flex align-items-center">
+                                  <div
+                                    className="rounded-circle bg-primary text-white d-flex align-items-center justify-content-center me-2"
+                                    style={{
+                                      width: 38,
+                                      height: 38,
+                                    }}
+                                  >
+                                    <i className="bi bi-person" />
+                                  </div>
 
-                            <td>
-                              <div className="d-flex gap-1">
+                                  <div>
+                                    <div className="fw-semibold">
+                                      {
+                                        customer.name
+                                      }
+                                    </div>
 
-                                {/* VIEW */}
+                                    {customer.id && (
+                                      <small className="text-muted">
+                                        ID:{" "}
+                                        {
+                                          customer.id
+                                        }
+                                      </small>
+                                    )}
+                                  </div>
+                                </div>
+                              </td>
 
-                                <button
-                                  type="button"
-                                  className="btn btn-outline-success btn-sm"
-                                  onClick={() =>
-                                    openCustomerDetails(
-                                      customer
-                                    )
+                              <td>
+                                {customer.phone ||
+                                  "-"}
+                              </td>
+
+                              <td>
+                                {customer.email ||
+                                  "-"}
+                              </td>
+
+                              <td>
+                                {customer.address ||
+                                  customer.location ||
+                                  "-"}
+                              </td>
+
+                              <td>
+                                {customer.active !==
+                                false ? (
+                                  <span className="badge bg-success">
+                                    Active
+                                  </span>
+                                ) : (
+                                  <span className="badge bg-secondary">
+                                    Inactive
+                                  </span>
+                                )}
+                              </td>
+
+                              <td>
+                                <span
+                                  className={
+                                    balance >
+                                    0
+                                      ? "text-danger fw-semibold"
+                                      : "text-success fw-semibold"
                                   }
-                                  title="View customer details"
                                 >
-                                  <i className="bi bi-eye"></i>
-                                </button>
-
-                                {/* EDIT */}
-
-                                <button
-                                  type="button"
-                                  className="btn btn-outline-primary btn-sm"
-                                  onClick={() =>
-                                    editCustomer(
-                                      customer
-                                    )
-                                  }
-                                  title="Edit customer"
-                                >
-                                  <i className="bi bi-pencil"></i>
-                                </button>
-
-                                {/* DELETE */}
-
-                                <button
-                                  type="button"
-                                  className="btn btn-outline-danger btn-sm"
-                                  onClick={() =>
-                                    deleteCustomer(
-                                      customer.id
-                                    )
-                                  }
-                                  disabled={
-                                    deletingId ===
-                                    customer.id
-                                  }
-                                  title="Delete customer"
-                                >
-                                  {deletingId ===
-                                  customer.id ? (
-                                    <span className="spinner-border spinner-border-sm"></span>
-                                  ) : (
-                                    <i className="bi bi-trash"></i>
+                                  TZS{" "}
+                                  {formatMoney(
+                                    balance
                                   )}
-                                </button>
+                                </span>
+                              </td>
 
-                              </div>
-                            </td>
+                              <td>
+                                <div className="d-flex justify-content-end gap-2">
+                                  <button
+                                    type="button"
+                                    className="btn btn-sm btn-outline-info"
+                                    title="View customer"
+                                    onClick={() =>
+                                      openCustomerDetails(
+                                        customer
+                                      )
+                                    }
+                                  >
+                                    <i className="bi bi-eye" />
+                                  </button>
 
-                          </tr>
-                        );
-                      }
-                    )
-                  )}
+                                  <button
+                                    type="button"
+                                    className="btn btn-sm btn-outline-primary"
+                                    title="Edit customer"
+                                    onClick={() =>
+                                      startEdit(
+                                        customer
+                                      )
+                                    }
+                                  >
+                                    <i className="bi bi-pencil" />
+                                  </button>
 
-                </tbody>
-              </table>
+                                  <button
+                                    type="button"
+                                    className="btn btn-sm btn-outline-danger"
+                                    title="Delete customer"
+                                    disabled={
+                                      deletingId ===
+                                      customer.id
+                                    }
+                                    onClick={() =>
+                                      handleDelete(
+                                        customer
+                                      )
+                                    }
+                                  >
+                                    {deletingId ===
+                                    customer.id ? (
+                                      <span
+                                        className="spinner-border spinner-border-sm"
+                                        role="status"
+                                      />
+                                    ) : (
+                                      <i className="bi bi-trash" />
+                                    )}
+                                  </button>
+                                </div>
+                              </td>
+                            </tr>
+                          );
+                        }
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              )}
             </div>
           </div>
         </>
       )}
-    </>
+    </div>
   );
-}
+};
 
+export default Customers;

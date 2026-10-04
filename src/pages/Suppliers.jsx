@@ -1,12 +1,18 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, {
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
 import PageHeader from "../components/common/PageHeader";
 import api from "../services/api";
 
 const initialForm = {
   name: "",
+  contact_person: "",
   phone: "",
-  item: "",
-  balance: "",
+  email: "",
+  address: "",
+  active: true,
 };
 
 const extractList = (response) => {
@@ -49,18 +55,13 @@ const extractError = (error) => {
     .join(" | ");
 };
 
-const formatMoney = (value) => {
-  return `TZS ${Number(value || 0).toLocaleString("en-TZ", {
-    maximumFractionDigits: 2,
-  })}`;
-};
-
 export default function Suppliers() {
   const [data, setData] = useState([]);
   const [form, setForm] = useState(initialForm);
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [exporting, setExporting] = useState(false);
 
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
@@ -68,12 +69,19 @@ export default function Suppliers() {
   const [editingId, setEditingId] = useState(null);
   const [search, setSearch] = useState("");
 
+  const [reportFromDate, setReportFromDate] =
+    useState("");
+
+  const [reportToDate, setReportToDate] =
+    useState("");
+
   const loadSuppliers = async () => {
     try {
       setLoading(true);
       setError("");
 
       const response = await api.get("/suppliers/");
+
       setData(extractList(response));
     } catch (err) {
       setError(extractError(err));
@@ -94,25 +102,45 @@ export default function Suppliers() {
     }
 
     return data.filter((supplier) => {
-      return (
-        String(supplier.name || "").toLowerCase().includes(keyword) ||
-        String(supplier.phone || "").toLowerCase().includes(keyword) ||
-        String(supplier.item || "").toLowerCase().includes(keyword)
-      );
+      return [
+        supplier.name,
+        supplier.contact_person,
+        supplier.phone,
+        supplier.email,
+        supplier.address,
+      ]
+        .filter(Boolean)
+        .some((value) =>
+          String(value)
+            .toLowerCase()
+            .includes(keyword)
+        );
     });
   }, [data, search]);
 
   const totalSuppliers = data.length;
 
-  const totalBalance = useMemo(() => {
-    return data.reduce((sum, supplier) => {
-      return sum + Number(supplier.balance || 0);
-    }, 0);
+  const activeSuppliers = useMemo(() => {
+    return data.filter(
+      (supplier) => supplier.active !== false
+    ).length;
   }, [data]);
 
+  const displayedSuppliers = filteredData.length;
+
   const resetForm = () => {
-    setForm(initialForm);
+    setForm({
+      ...initialForm,
+    });
+
     setEditingId(null);
+  };
+
+  const handleFormChange = (field, value) => {
+    setForm((current) => ({
+      ...current,
+      [field]: value,
+    }));
   };
 
   const saveSupplier = async (e) => {
@@ -127,17 +155,9 @@ export default function Suppliers() {
     }
 
     if (!form.phone.trim()) {
-      setError("Please enter the supplier phone number.");
-      return;
-    }
-
-    if (!form.item.trim()) {
-      setError("Please enter the main supplied item.");
-      return;
-    }
-
-    if (form.balance !== "" && Number(form.balance) < 0) {
-      setError("Balance cannot be negative.");
+      setError(
+        "Please enter the supplier phone number."
+      );
       return;
     }
 
@@ -146,20 +166,36 @@ export default function Suppliers() {
 
       const payload = {
         name: form.name.trim(),
+        contact_person:
+          form.contact_person.trim(),
         phone: form.phone.trim(),
-        item: form.item.trim(),
-        balance: Number(form.balance || 0),
+        email: form.email.trim(),
+        address: form.address.trim(),
+        active: Boolean(form.active),
       };
 
       if (editingId) {
-        await api.patch(`/suppliers/${editingId}/`, payload);
-        setSuccess("Supplier updated successfully.");
+        await api.patch(
+          `/suppliers/${editingId}/`,
+          payload
+        );
+
+        setSuccess(
+          "Supplier updated successfully."
+        );
       } else {
-        await api.post("/suppliers/", payload);
-        setSuccess("Supplier added successfully.");
+        await api.post(
+          "/suppliers/",
+          payload
+        );
+
+        setSuccess(
+          "Supplier added successfully."
+        );
       }
 
       await loadSuppliers();
+
       resetForm();
     } catch (err) {
       setError(extractError(err));
@@ -173,9 +209,12 @@ export default function Suppliers() {
 
     setForm({
       name: supplier.name || "",
+      contact_person:
+        supplier.contact_person || "",
       phone: supplier.phone || "",
-      item: supplier.item || "",
-      balance: supplier.balance ?? "",
+      email: supplier.email || "",
+      address: supplier.address || "",
+      active: supplier.active !== false,
     });
 
     setError("");
@@ -200,7 +239,9 @@ export default function Suppliers() {
       setError("");
       setSuccess("");
 
-      await api.delete(`/suppliers/${supplier.id}/`);
+      await api.delete(
+        `/suppliers/${supplier.id}/`
+      );
 
       if (editingId === supplier.id) {
         resetForm();
@@ -208,9 +249,117 @@ export default function Suppliers() {
 
       await loadSuppliers();
 
-      setSuccess("Supplier deleted successfully.");
+      setSuccess(
+        "Supplier deleted successfully."
+      );
     } catch (err) {
       setError(extractError(err));
+    }
+  };
+
+  const generateSupplierReport = async () => {
+    setError("");
+    setSuccess("");
+
+    if (!reportFromDate) {
+      setError(
+        "Please select the report start date."
+      );
+      return;
+    }
+
+    if (!reportToDate) {
+      setError(
+        "Please select the report end date."
+      );
+      return;
+    }
+
+    if (reportFromDate > reportToDate) {
+      setError(
+        "Start date cannot be after end date."
+      );
+      return;
+    }
+
+    try {
+      setExporting(true);
+
+      const response = await api.get(
+        "/reports/suppliers/pdf/",
+        {
+          params: {
+            from_date: reportFromDate,
+            to_date: reportToDate,
+          },
+          responseType: "blob",
+        }
+      );
+
+      const blob = new Blob(
+        [response.data],
+        {
+          type: "application/pdf",
+        }
+      );
+
+      const pdfUrl =
+        window.URL.createObjectURL(blob);
+
+      const newWindow = window.open(
+        pdfUrl,
+        "_blank"
+      );
+
+      if (!newWindow) {
+        setError(
+          "The PDF could not be opened because your browser blocked the new tab. Please allow pop-ups for this site."
+        );
+
+        window.URL.revokeObjectURL(
+          pdfUrl
+        );
+
+        return;
+      }
+
+      setSuccess(
+        "Supplier PDF report opened successfully."
+      );
+
+      setTimeout(() => {
+        window.URL.revokeObjectURL(
+          pdfUrl
+        );
+      }, 30000);
+    } catch (err) {
+      console.error(
+        "Supplier PDF export error:",
+        err
+      );
+
+      if (
+        err?.response?.data instanceof Blob
+      ) {
+        try {
+          const text =
+            await err.response.data.text();
+
+          const parsed =
+            JSON.parse(text);
+
+          if (parsed?.detail) {
+            setError(parsed.detail);
+            return;
+          }
+        } catch {
+          // Ignore blob parsing errors.
+        }
+      }
+
+      setError(extractError(err));
+    } finally {
+      setExporting(false);
     }
   };
 
@@ -223,7 +372,8 @@ export default function Suppliers() {
 
       {error && (
         <div className="alert alert-danger alert-dismissible fade show">
-          <strong>Error:</strong> {error}
+          <strong>Error:</strong>{" "}
+          {error}
 
           <button
             type="button"
@@ -245,6 +395,7 @@ export default function Suppliers() {
         </div>
       )}
 
+      {/* SUMMARY */}
       <div className="row g-3 mb-4">
         <div className="col-md-4">
           <div className="summary-card">
@@ -267,16 +418,16 @@ export default function Suppliers() {
         <div className="col-md-4">
           <div className="summary-card">
             <div className="summary-card-icon">
-              <i className="bi bi-wallet2" />
+              <i className="bi bi-person-check" />
             </div>
 
             <div>
               <div className="summary-card-label">
-                Outstanding Balance
+                Active Suppliers
               </div>
 
               <div className="summary-card-value">
-                {formatMoney(totalBalance)}
+                {activeSuppliers}
               </div>
             </div>
           </div>
@@ -285,7 +436,7 @@ export default function Suppliers() {
         <div className="col-md-4">
           <div className="summary-card">
             <div className="summary-card-icon">
-              <i className="bi bi-box-seam" />
+              <i className="bi bi-list-ul" />
             </div>
 
             <div>
@@ -294,17 +445,106 @@ export default function Suppliers() {
               </div>
 
               <div className="summary-card-value">
-                {filteredData.length}
+                {displayedSuppliers}
               </div>
             </div>
           </div>
         </div>
       </div>
 
+      {/* SUPPLIER REPORT */}
+      <div className="card border-0 shadow-sm mb-4">
+        <div className="card-body">
+          <div className="d-flex justify-content-between align-items-center mb-3">
+            <div>
+              <h5 className="mb-1">
+                Supplier Report
+              </h5>
+
+              <p className="text-muted mb-0 small">
+                Generate a professional PDF report
+                containing supplier information and
+                supplier records.
+              </p>
+            </div>
+
+            <i className="bi bi-file-earmark-pdf fs-2 text-danger" />
+          </div>
+
+          <div className="row g-3 align-items-end">
+            <div className="col-md-4">
+              <label className="form-label">
+                From Date
+              </label>
+
+              <input
+                type="date"
+                className="form-control"
+                value={reportFromDate}
+                onChange={(e) =>
+                  setReportFromDate(
+                    e.target.value
+                  )
+                }
+              />
+            </div>
+
+            <div className="col-md-4">
+              <label className="form-label">
+                To Date
+              </label>
+
+              <input
+                type="date"
+                className="form-control"
+                value={reportToDate}
+                onChange={(e) =>
+                  setReportToDate(
+                    e.target.value
+                  )
+                }
+              />
+            </div>
+
+            <div className="col-md-4">
+              <button
+                type="button"
+                className="btn btn-success w-100"
+                onClick={
+                  generateSupplierReport
+                }
+                disabled={exporting}
+              >
+                {exporting ? (
+                  <>
+                    <span
+                      className="spinner-border spinner-border-sm me-2"
+                      role="status"
+                      aria-hidden="true"
+                    />
+
+                    Generating PDF...
+                  </>
+                ) : (
+                  <>
+                    <i className="bi bi-file-earmark-pdf me-2" />
+
+                    Generate PDF Report
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* SUPPLIER FORM */}
       <div className="form-card mb-4">
         <div className="d-flex justify-content-between align-items-center mb-3">
           <h5 className="mb-0">
-            {editingId ? "Edit Supplier" : "Add Supplier"}
+            {editingId
+              ? "Edit Supplier"
+              : "Add Supplier"}
           </h5>
 
           {editingId && (
@@ -321,7 +561,7 @@ export default function Suppliers() {
 
         <form onSubmit={saveSupplier}>
           <div className="row g-3">
-            <div className="col-md-3">
+            <div className="col-md-4">
               <label className="form-label">
                 Supplier Name
               </label>
@@ -332,16 +572,35 @@ export default function Suppliers() {
                 placeholder="e.g. Mkulima Feed Suppliers"
                 value={form.name}
                 onChange={(e) =>
-                  setForm({
-                    ...form,
-                    name: e.target.value,
-                  })
+                  handleFormChange(
+                    "name",
+                    e.target.value
+                  )
                 }
                 required
               />
             </div>
 
-            <div className="col-md-3">
+            <div className="col-md-4">
+              <label className="form-label">
+                Contact Person
+              </label>
+
+              <input
+                type="text"
+                className="form-control"
+                placeholder="e.g. John Mwita"
+                value={form.contact_person}
+                onChange={(e) =>
+                  handleFormChange(
+                    "contact_person",
+                    e.target.value
+                  )
+                }
+              />
+            </div>
+
+            <div className="col-md-4">
               <label className="form-label">
                 Phone
               </label>
@@ -352,54 +611,81 @@ export default function Suppliers() {
                 placeholder="e.g. 0712 345 678"
                 value={form.phone}
                 onChange={(e) =>
-                  setForm({
-                    ...form,
-                    phone: e.target.value,
-                  })
+                  handleFormChange(
+                    "phone",
+                    e.target.value
+                  )
                 }
                 required
               />
             </div>
 
-            <div className="col-md-3">
+            <div className="col-md-4">
               <label className="form-label">
-                Main Item
+                Email
+              </label>
+
+              <input
+                type="email"
+                className="form-control"
+                placeholder="supplier@example.com"
+                value={form.email}
+                onChange={(e) =>
+                  handleFormChange(
+                    "email",
+                    e.target.value
+                  )
+                }
+              />
+            </div>
+
+            <div className="col-md-5">
+              <label className="form-label">
+                Address
               </label>
 
               <input
                 type="text"
                 className="form-control"
-                placeholder="e.g. Layer Feed"
-                value={form.item}
+                placeholder="Supplier physical address"
+                value={form.address}
                 onChange={(e) =>
-                  setForm({
-                    ...form,
-                    item: e.target.value,
-                  })
+                  handleFormChange(
+                    "address",
+                    e.target.value
+                  )
                 }
-                required
               />
             </div>
 
             <div className="col-md-3">
               <label className="form-label">
-                Balance (TZS)
+                Status
               </label>
 
-              <input
-                type="number"
-                min="0"
-                step="0.01"
-                className="form-control"
-                placeholder="0"
-                value={form.balance}
-                onChange={(e) =>
-                  setForm({
-                    ...form,
-                    balance: e.target.value,
-                  })
+              <select
+                className="form-select"
+                value={
+                  form.active
+                    ? "active"
+                    : "inactive"
                 }
-              />
+                onChange={(e) =>
+                  handleFormChange(
+                    "active",
+                    e.target.value ===
+                      "active"
+                  )
+                }
+              >
+                <option value="active">
+                  Active
+                </option>
+
+                <option value="inactive">
+                  Inactive
+                </option>
+              </select>
             </div>
 
             <div className="col-12">
@@ -413,7 +699,9 @@ export default function Suppliers() {
                     <span
                       className="spinner-border spinner-border-sm me-2"
                       role="status"
+                      aria-hidden="true"
                     />
+
                     Saving...
                   </>
                 ) : (
@@ -448,14 +736,19 @@ export default function Suppliers() {
         </form>
       </div>
 
+      {/* SUPPLIER TABLE */}
       <div className="table-card">
         <div className="d-flex flex-wrap justify-content-between align-items-center gap-2 p-3">
           <div>
-            <h5 className="mb-1">Supplier Records</h5>
+            <h5 className="mb-1">
+              Supplier Records
+            </h5>
 
             <small className="text-muted">
               {filteredData.length} supplier
-              {filteredData.length === 1 ? "" : "s"}
+              {filteredData.length === 1
+                ? ""
+                : "s"}
             </small>
           </div>
 
@@ -470,14 +763,18 @@ export default function Suppliers() {
                 className="form-control"
                 placeholder="Search suppliers..."
                 value={search}
-                onChange={(e) => setSearch(e.target.value)}
+                onChange={(e) =>
+                  setSearch(e.target.value)
+                }
               />
 
               {search && (
                 <button
                   type="button"
                   className="btn btn-outline-secondary"
-                  onClick={() => setSearch("")}
+                  onClick={() =>
+                    setSearch("")
+                  }
                 >
                   <i className="bi bi-x-lg" />
                 </button>
@@ -490,18 +787,26 @@ export default function Suppliers() {
           <table className="table align-middle mb-0">
             <thead>
               <tr>
+                <th>#</th>
                 <th>Supplier</th>
+                <th>Contact Person</th>
                 <th>Phone</th>
-                <th>Main Item</th>
-                <th>Balance</th>
-                <th className="text-end">Action</th>
+                <th>Email</th>
+                <th>Address</th>
+                <th>Status</th>
+                <th className="text-end">
+                  Action
+                </th>
               </tr>
             </thead>
 
             <tbody>
               {loading ? (
                 <tr>
-                  <td colSpan="5" className="text-center py-5">
+                  <td
+                    colSpan="8"
+                    className="text-center py-5"
+                  >
                     <div
                       className="spinner-border text-success"
                       role="status"
@@ -515,7 +820,7 @@ export default function Suppliers() {
               ) : filteredData.length === 0 ? (
                 <tr>
                   <td
-                    colSpan="5"
+                    colSpan="8"
                     className="text-center py-5 text-muted"
                   >
                     <i className="bi bi-truck fs-2 d-block mb-2" />
@@ -526,53 +831,85 @@ export default function Suppliers() {
                   </td>
                 </tr>
               ) : (
-                filteredData.map((supplier) => (
-                  <tr key={supplier.id}>
-                    <td>
-                      <strong>{supplier.name}</strong>
-                    </td>
-
-                    <td>{supplier.phone || "-"}</td>
-
-                    <td>{supplier.item || "-"}</td>
-
-                    <td
-                      className={
-                        Number(supplier.balance || 0) > 0
-                          ? "text-danger"
-                          : ""
-                      }
+                filteredData.map(
+                  (supplier, index) => (
+                    <tr
+                      key={supplier.id}
                     >
-                      <strong>
-                        {formatMoney(supplier.balance)}
-                      </strong>
-                    </td>
+                      <td>
+                        {index + 1}
+                      </td>
 
-                    <td className="text-end">
-                      <button
-                        type="button"
-                        className="btn btn-sm btn-light me-1"
-                        title="Edit"
-                        onClick={() =>
-                          editSupplier(supplier)
-                        }
-                      >
-                        <i className="bi bi-pencil" />
-                      </button>
+                      <td>
+                        <strong>
+                          {supplier.name ||
+                            "-"}
+                        </strong>
+                      </td>
 
-                      <button
-                        type="button"
-                        className="btn btn-sm btn-light text-danger"
-                        title="Delete"
-                        onClick={() =>
-                          deleteSupplier(supplier)
-                        }
-                      >
-                        <i className="bi bi-trash" />
-                      </button>
-                    </td>
-                  </tr>
-                ))
+                      <td>
+                        {supplier.contact_person ||
+                          "-"}
+                      </td>
+
+                      <td>
+                        {supplier.phone ||
+                          "-"}
+                      </td>
+
+                      <td>
+                        {supplier.email ||
+                          "-"}
+                      </td>
+
+                      <td>
+                        {supplier.address ||
+                          "-"}
+                      </td>
+
+                      <td>
+                        {supplier.active !==
+                        false ? (
+                          <span className="badge bg-success">
+                            Active
+                          </span>
+                        ) : (
+                          <span className="badge bg-secondary">
+                            Inactive
+                          </span>
+                        )}
+                      </td>
+
+                      <td className="text-end">
+                        <button
+                          type="button"
+                          className="btn btn-sm btn-light me-1"
+                          title="Edit"
+                          onClick={() =>
+                            editSupplier(
+                              supplier
+                            )
+                          }
+                        >
+                          <i className="bi bi-pencil" />
+                        </button>
+
+                        <button
+                          type="button"
+                          className="btn btn-sm btn-light text-danger"
+                          title="Delete"
+                          onClick={() =>
+                            deleteSupplier(
+                              supplier
+                            )
+                          }
+                        >
+                          <i className="bi bi-trash" />
+                        </button>
+                      </td>
+                    </tr>
+                  )
+                )
               )}
             </tbody>
           </table>

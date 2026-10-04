@@ -1,8 +1,24 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, {
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
+
 import PageHeader from "../components/common/PageHeader";
 import api from "../services/api";
 
-const today = new Date().toISOString().split("T")[0];
+const getToday = () => {
+  const date = new Date();
+  const offset = date.getTimezoneOffset();
+
+  return new Date(
+    date.getTime() - offset * 60000
+  )
+    .toISOString()
+    .split("T")[0];
+};
+
+const today = getToday();
 
 const mortalityCauses = [
   "Natural",
@@ -29,17 +45,35 @@ export default function Mortality() {
   const [data, setData] = useState([]);
   const [flocks, setFlocks] = useState([]);
 
-  const [form, setForm] = useState(initialForm);
+  const [form, setForm] =
+    useState(initialForm);
 
-  const [editingId, setEditingId] = useState(null);
+  const [editingId, setEditingId] =
+    useState(null);
 
-  const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
+  const [loading, setLoading] =
+    useState(true);
 
-  const [error, setError] = useState("");
-  const [success, setSuccess] = useState("");
+  const [saving, setSaving] =
+    useState(false);
 
-  const [search, setSearch] = useState("");
+  const [exporting, setExporting] =
+    useState(false);
+
+  const [error, setError] =
+    useState("");
+
+  const [success, setSuccess] =
+    useState("");
+
+  const [search, setSearch] =
+    useState("");
+
+  const [reportFromDate, setReportFromDate] =
+    useState("");
+
+  const [reportToDate, setReportToDate] =
+    useState("");
 
   // ============================================================
   // HELPERS
@@ -58,10 +92,14 @@ export default function Mortality() {
   };
 
   const extractError = (err) => {
-    const responseData = err?.response?.data;
+    const responseData =
+      err?.response?.data;
 
     if (!responseData) {
-      return err?.message || "Something went wrong.";
+      return (
+        err?.message ||
+        "Something went wrong."
+      );
     }
 
     if (typeof responseData === "string") {
@@ -74,17 +112,32 @@ export default function Mortality() {
 
     const messages = [];
 
-    Object.entries(responseData).forEach(([field, value]) => {
-      if (Array.isArray(value)) {
-        messages.push(`${field}: ${value.join(", ")}`);
-      } else if (typeof value === "string") {
-        messages.push(`${field}: ${value}`);
-      } else {
-        messages.push(`${field}: ${JSON.stringify(value)}`);
+    Object.entries(responseData).forEach(
+      ([field, value]) => {
+        if (Array.isArray(value)) {
+          messages.push(
+            `${field}: ${value.join(", ")}`
+          );
+        } else if (
+          typeof value === "string"
+        ) {
+          messages.push(
+            `${field}: ${value}`
+          );
+        } else {
+          messages.push(
+            `${field}: ${JSON.stringify(
+              value
+            )}`
+          );
+        }
       }
-    });
+    );
 
-    return messages.join(" | ") || "Unable to process request.";
+    return (
+      messages.join(" | ") ||
+      "Unable to process request."
+    );
   };
 
   const showSuccess = (message) => {
@@ -97,8 +150,17 @@ export default function Mortality() {
   };
 
   const getFlock = (flockId) => {
+    if (
+      flockId &&
+      typeof flockId === "object"
+    ) {
+      flockId = flockId.id;
+    }
+
     return flocks.find(
-      (flock) => String(flock.id) === String(flockId)
+      (flock) =>
+        String(flock.id) ===
+        String(flockId)
     );
   };
 
@@ -109,7 +171,9 @@ export default function Mortality() {
         : item.flock_code;
     }
 
-    const flock = getFlock(item.flock);
+    const flock = getFlock(
+      item.flock
+    );
 
     if (flock) {
       return `${flock.code} - ${flock.name}`;
@@ -127,17 +191,30 @@ export default function Mortality() {
       setLoading(true);
       setError("");
 
-      const [mortalityResponse, flocksResponse] =
-        await Promise.all([
-          api.get("/health/mortality/"),
-          api.get("/flocks/"),
-        ]);
+      const [
+        mortalityResponse,
+        flocksResponse,
+      ] = await Promise.all([
+        api.get("/health/mortality/"),
+        api.get("/flocks/"),
+      ]);
 
-      setData(getList(mortalityResponse));
-      setFlocks(getList(flocksResponse));
+      setData(
+        getList(mortalityResponse)
+      );
+
+      setFlocks(
+        getList(flocksResponse)
+      );
     } catch (err) {
-      console.error("Mortality loading error:", err);
-      setError(extractError(err));
+      console.error(
+        "Mortality loading error:",
+        err
+      );
+
+      setError(
+        extractError(err)
+      );
     } finally {
       setLoading(false);
     }
@@ -152,7 +229,10 @@ export default function Mortality() {
   // ============================================================
 
   const handleChange = (e) => {
-    const { name, value } = e.target;
+    const {
+      name,
+      value,
+    } = e.target;
 
     setForm((prev) => ({
       ...prev,
@@ -163,7 +243,7 @@ export default function Mortality() {
   const resetForm = () => {
     setForm({
       ...initialForm,
-      date: new Date().toISOString().split("T")[0],
+      date: getToday(),
     });
 
     setEditingId(null);
@@ -179,41 +259,61 @@ export default function Mortality() {
     setError("");
 
     if (!form.date) {
-      setError("Please select the date.");
+      setError(
+        "Please select the date."
+      );
+
       return;
     }
 
     if (!form.flock) {
-      setError("Please select a flock.");
+      setError(
+        "Please select a flock."
+      );
+
       return;
     }
 
-    if (!form.quantity || Number(form.quantity) <= 0) {
-      setError("Please enter a valid mortality quantity.");
+    if (
+      !form.quantity ||
+      Number(form.quantity) <= 0
+    ) {
+      setError(
+        "Please enter a valid mortality quantity."
+      );
+
       return;
     }
 
     if (!form.cause) {
-      setError("Please select the mortality cause.");
+      setError(
+        "Please select the mortality cause."
+      );
+
       return;
     }
 
-    const selectedFlock = getFlock(form.flock);
+    const selectedFlock =
+      getFlock(form.flock);
 
     /*
-     * For a new mortality record, provide an early frontend
-     * validation before sending the request to Django.
+     * For a new mortality record,
+     * validate against the current flock quantity.
      */
     if (
       !editingId &&
       selectedFlock &&
-      selectedFlock.current_quantity !== undefined &&
+      selectedFlock.current_quantity !==
+        undefined &&
       Number(form.quantity) >
-        Number(selectedFlock.current_quantity)
+        Number(
+          selectedFlock.current_quantity
+        )
     ) {
       setError(
         `Mortality cannot exceed the current flock quantity of ${selectedFlock.current_quantity} birds.`
       );
+
       return;
     }
 
@@ -229,10 +329,11 @@ export default function Mortality() {
       };
 
       if (editingId) {
-        const response = await api.patch(
-          `/health/mortality/${editingId}/`,
-          payload
-        );
+        const response =
+          await api.patch(
+            `/health/mortality/${editingId}/`,
+            payload
+          );
 
         setData((prev) =>
           prev.map((item) =>
@@ -246,10 +347,11 @@ export default function Mortality() {
           "Mortality record updated successfully."
         );
       } else {
-        const response = await api.post(
-          "/health/mortality/",
-          payload
-        );
+        const response =
+          await api.post(
+            "/health/mortality/",
+            payload
+          );
 
         setData((prev) => [
           response.data,
@@ -262,17 +364,26 @@ export default function Mortality() {
       }
 
       /*
-       * Mortality changes flock.current_quantity on the backend.
-       * Refresh flocks so the quantity displayed in the dropdown
-       * remains correct.
+       * Refresh flocks because mortality
+       * changes current flock quantity.
        */
-      const flocksResponse = await api.get("/flocks/");
-      setFlocks(getList(flocksResponse));
+      const flocksResponse =
+        await api.get("/flocks/");
+
+      setFlocks(
+        getList(flocksResponse)
+      );
 
       resetForm();
     } catch (err) {
-      console.error("Mortality save error:", err);
-      setError(extractError(err));
+      console.error(
+        "Mortality save error:",
+        err
+      );
+
+      setError(
+        extractError(err)
+      );
     } finally {
       setSaving(false);
     }
@@ -285,18 +396,38 @@ export default function Mortality() {
   const editRecord = (item) => {
     setEditingId(item.id);
 
+    let flockId = item.flock;
+
+    if (
+      flockId &&
+      typeof flockId === "object"
+    ) {
+      flockId = flockId.id;
+    }
+
     setForm({
-      date: item.date || today,
-      flock: item.flock
-        ? String(item.flock)
-        : "",
+      date:
+        item.date ||
+        getToday(),
+
+      flock:
+        flockId
+          ? String(flockId)
+          : "",
+
       quantity:
-        item.quantity !== undefined &&
+        item.quantity !==
+          undefined &&
         item.quantity !== null
           ? String(item.quantity)
           : "",
-      cause: item.cause || "Natural",
-      notes: item.notes || "",
+
+      cause:
+        item.cause ||
+        "Natural",
+
+      notes:
+        item.notes || "",
     });
 
     window.scrollTo({
@@ -310,9 +441,10 @@ export default function Mortality() {
   // ============================================================
 
   const deleteRecord = async (id) => {
-    const confirmed = window.confirm(
-      "Are you sure you want to delete this mortality record?"
-    );
+    const confirmed =
+      window.confirm(
+        "Are you sure you want to delete this mortality record?"
+      );
 
     if (!confirmed) {
       return;
@@ -326,15 +458,21 @@ export default function Mortality() {
       );
 
       setData((prev) =>
-        prev.filter((item) => item.id !== id)
+        prev.filter(
+          (item) => item.id !== id
+        )
       );
 
       /*
-       * The backend should restore the mortality quantity
-       * to the flock when the record is deleted.
+       * Refresh flocks because deleting
+       * mortality should restore flock quantity.
        */
-      const flocksResponse = await api.get("/flocks/");
-      setFlocks(getList(flocksResponse));
+      const flocksResponse =
+        await api.get("/flocks/");
+
+      setFlocks(
+        getList(flocksResponse)
+      );
 
       if (editingId === id) {
         resetForm();
@@ -344,8 +482,14 @@ export default function Mortality() {
         "Mortality record deleted successfully."
       );
     } catch (err) {
-      console.error("Mortality delete error:", err);
-      setError(extractError(err));
+      console.error(
+        "Mortality delete error:",
+        err
+      );
+
+      setError(
+        extractError(err)
+      );
     }
   };
 
@@ -354,7 +498,8 @@ export default function Mortality() {
   // ============================================================
 
   const filteredData = useMemo(() => {
-    const term = search.toLowerCase().trim();
+    const term =
+      search.toLowerCase().trim();
 
     if (!term) {
       return data;
@@ -388,19 +533,164 @@ export default function Mortality() {
   // SUMMARY
   // ============================================================
 
-  const totalMortality = data.reduce(
-    (total, item) =>
-      total + Number(item.quantity || 0),
-    0
-  );
-
-  const todayMortality = data
-    .filter((item) => item.date === today)
-    .reduce(
+  const totalMortality =
+    data.reduce(
       (total, item) =>
-        total + Number(item.quantity || 0),
+        total +
+        Number(
+          item.quantity || 0
+        ),
       0
     );
+
+  const todayMortality =
+    data
+      .filter(
+        (item) =>
+          item.date === today
+      )
+      .reduce(
+        (total, item) =>
+          total +
+          Number(
+            item.quantity || 0
+          ),
+        0
+      );
+
+  // ============================================================
+  // EXPORT PDF REPORT
+  // ============================================================
+
+  const generateReport = async () => {
+    setError("");
+    setSuccess("");
+
+    if (!reportFromDate) {
+      setError(
+        "Please select the report start date."
+      );
+
+      return;
+    }
+
+    if (!reportToDate) {
+      setError(
+        "Please select the report end date."
+      );
+
+      return;
+    }
+
+    if (
+      reportFromDate >
+      reportToDate
+    ) {
+      setError(
+        "Start date cannot be after end date."
+      );
+
+      return;
+    }
+
+    try {
+      setExporting(true);
+
+      const response =
+        await api.get(
+          "/reports/health/pdf/",
+          {
+            params: {
+              from_date:
+                reportFromDate,
+
+              to_date:
+                reportToDate,
+            },
+
+            responseType: "blob",
+          }
+        );
+
+      const blob = new Blob(
+        [response.data],
+        {
+          type: "application/pdf",
+        }
+      );
+
+      const pdfUrl =
+        window.URL.createObjectURL(
+          blob
+        );
+
+      const newWindow =
+        window.open(
+          pdfUrl,
+          "_blank"
+        );
+
+      if (!newWindow) {
+        setError(
+          "The PDF could not be opened because your browser blocked the new tab. Please allow pop-ups for this site."
+        );
+
+        window.URL.revokeObjectURL(
+          pdfUrl
+        );
+
+        return;
+      }
+
+      showSuccess(
+        "Mortality PDF report opened successfully."
+      );
+
+      setTimeout(() => {
+        window.URL.revokeObjectURL(
+          pdfUrl
+        );
+      }, 30000);
+    } catch (err) {
+      console.error(
+        "Mortality PDF export error:",
+        err
+      );
+
+      /*
+       * Blob responses sometimes contain
+       * JSON error messages. Try to read
+       * the blob before displaying the error.
+       */
+      if (
+        err?.response?.data instanceof Blob
+      ) {
+        try {
+          const text =
+            await err.response.data.text();
+
+          const parsed =
+            JSON.parse(text);
+
+          if (parsed?.detail) {
+            setError(
+              parsed.detail
+            );
+
+            return;
+          }
+        } catch {
+          // Ignore blob parsing errors.
+        }
+      }
+
+      setError(
+        extractError(err)
+      );
+    } finally {
+      setExporting(false);
+    }
+  };
 
   // ============================================================
   // RENDER
@@ -419,7 +709,9 @@ export default function Mortality() {
 
       {success && (
         <div className="alert alert-success alert-dismissible">
-          <strong>Success:</strong>{" "}
+          <strong>
+            Success:
+          </strong>{" "}
           {success}
 
           <button
@@ -434,7 +726,9 @@ export default function Mortality() {
 
       {error && (
         <div className="alert alert-danger alert-dismissible">
-          <strong>Error:</strong>{" "}
+          <strong>
+            Error:
+          </strong>{" "}
           {error}
 
           <button
@@ -446,6 +740,107 @@ export default function Mortality() {
           />
         </div>
       )}
+
+      {/* ======================================================
+          REPORT
+      ====================================================== */}
+
+      <div className="card border-0 shadow-sm mb-4">
+        <div className="card-body">
+          <div className="d-flex justify-content-between align-items-center mb-3">
+            <div>
+              <h5 className="mb-1">
+                Mortality Report
+              </h5>
+
+              <p className="text-muted mb-0 small">
+                Generate a professional PDF report
+                for mortality records within the
+                selected date range.
+              </p>
+            </div>
+
+            <i className="bi bi-file-earmark-pdf fs-2 text-danger" />
+          </div>
+
+          <div className="row g-3 align-items-end">
+            {/* FROM DATE */}
+
+            <div className="col-md-4">
+              <label className="form-label">
+                From Date
+              </label>
+
+              <input
+                type="date"
+                className="form-control"
+                value={
+                  reportFromDate
+                }
+                onChange={(e) =>
+                  setReportFromDate(
+                    e.target.value
+                  )
+                }
+              />
+            </div>
+
+            {/* TO DATE */}
+
+            <div className="col-md-4">
+              <label className="form-label">
+                To Date
+              </label>
+
+              <input
+                type="date"
+                className="form-control"
+                value={
+                  reportToDate
+                }
+                onChange={(e) =>
+                  setReportToDate(
+                    e.target.value
+                  )
+                }
+              />
+            </div>
+
+            {/* GENERATE */}
+
+            <div className="col-md-4">
+              <button
+                type="button"
+                className="btn btn-danger w-100"
+                onClick={
+                  generateReport
+                }
+                disabled={
+                  exporting
+                }
+              >
+                {exporting ? (
+                  <>
+                    <span
+                      className="spinner-border spinner-border-sm me-2"
+                      role="status"
+                      aria-hidden="true"
+                    />
+
+                    Generating PDF...
+                  </>
+                ) : (
+                  <>
+                    <i className="bi bi-file-earmark-pdf me-2" />
+
+                    Generate PDF Report
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
 
       {/* ======================================================
           SUMMARY
@@ -511,7 +906,9 @@ export default function Mortality() {
             <button
               type="button"
               className="btn btn-outline-secondary btn-sm"
-              onClick={resetForm}
+              onClick={
+                resetForm
+              }
             >
               Cancel Edit
             </button>
@@ -535,7 +932,9 @@ export default function Mortality() {
                 name="date"
                 className="form-control"
                 value={form.date}
-                onChange={handleChange}
+                onChange={
+                  handleChange
+                }
                 required
               />
             </div>
@@ -553,27 +952,37 @@ export default function Mortality() {
               <select
                 name="flock"
                 className="form-select"
-                value={form.flock}
-                onChange={handleChange}
+                value={
+                  form.flock
+                }
+                onChange={
+                  handleChange
+                }
                 required
               >
                 <option value="">
                   Select Flock
                 </option>
 
-                {flocks.map((flock) => (
-                  <option
-                    key={flock.id}
-                    value={flock.id}
-                  >
-                    {flock.code} -{" "}
-                    {flock.name}{" "}
-                    {flock.current_quantity !==
+                {flocks.map(
+                  (flock) => (
+                    <option
+                      key={
+                        flock.id
+                      }
+                      value={
+                        flock.id
+                      }
+                    >
+                      {flock.code} -{" "}
+                      {flock.name}{" "}
+                      {flock.current_quantity !==
                       undefined
-                      ? `(${flock.current_quantity} birds)`
-                      : ""}
-                  </option>
-                ))}
+                        ? `(${flock.current_quantity} birds)`
+                        : ""}
+                    </option>
+                  )
+                )}
               </select>
             </div>
 
@@ -593,8 +1002,12 @@ export default function Mortality() {
                 className="form-control"
                 min="1"
                 step="1"
-                value={form.quantity}
-                onChange={handleChange}
+                value={
+                  form.quantity
+                }
+                onChange={
+                  handleChange
+                }
                 required
               />
             </div>
@@ -612,22 +1025,28 @@ export default function Mortality() {
               <select
                 name="cause"
                 className="form-select"
-                value={form.cause}
-                onChange={handleChange}
+                value={
+                  form.cause
+                }
+                onChange={
+                  handleChange
+                }
                 required
               >
                 <option value="">
                   Select Cause
                 </option>
 
-                {mortalityCauses.map((cause) => (
-                  <option
-                    key={cause}
-                    value={cause}
-                  >
-                    {cause}
-                  </option>
-                ))}
+                {mortalityCauses.map(
+                  (cause) => (
+                    <option
+                      key={cause}
+                      value={cause}
+                    >
+                      {cause}
+                    </option>
+                  )
+                )}
               </select>
             </div>
 
@@ -643,8 +1062,12 @@ export default function Mortality() {
                 className="form-control"
                 rows="2"
                 placeholder="Additional notes..."
-                value={form.notes}
-                onChange={handleChange}
+                value={
+                  form.notes
+                }
+                onChange={
+                  handleChange
+                }
               />
             </div>
 
@@ -652,7 +1075,9 @@ export default function Mortality() {
 
             <div className="col-12">
               <div className="alert alert-warning mb-0">
-                <strong>Important:</strong>{" "}
+                <strong>
+                  Important:
+                </strong>{" "}
                 Recording mortality automatically
                 reduces the selected flock's current
                 quantity.
@@ -665,7 +1090,9 @@ export default function Mortality() {
               <button
                 type="submit"
                 className="btn btn-danger"
-                disabled={saving}
+                disabled={
+                  saving
+                }
               >
                 {saving
                   ? "Saving..."
@@ -678,8 +1105,12 @@ export default function Mortality() {
                 <button
                   type="button"
                   className="btn btn-secondary ms-2"
-                  onClick={resetForm}
-                  disabled={saving}
+                  onClick={
+                    resetForm
+                  }
+                  disabled={
+                    saving
+                  }
                 >
                   Cancel
                 </button>
@@ -702,11 +1133,15 @@ export default function Mortality() {
           <input
             type="text"
             className="form-control"
-            style={{ maxWidth: "300px" }}
+            style={{
+              maxWidth: "300px",
+            }}
             placeholder="Search mortality..."
             value={search}
             onChange={(e) =>
-              setSearch(e.target.value)
+              setSearch(
+                e.target.value
+              )
             }
           />
         </div>
@@ -715,12 +1150,29 @@ export default function Mortality() {
           <table className="table align-middle mb-0">
             <thead>
               <tr>
-                <th>Date</th>
-                <th>Flock</th>
-                <th>Quantity</th>
-                <th>Cause</th>
-                <th>Notes</th>
-                <th>Actions</th>
+                <th>
+                  Date
+                </th>
+
+                <th>
+                  Flock
+                </th>
+
+                <th>
+                  Quantity
+                </th>
+
+                <th>
+                  Cause
+                </th>
+
+                <th>
+                  Notes
+                </th>
+
+                <th>
+                  Actions
+                </th>
               </tr>
             </thead>
 
@@ -731,90 +1183,115 @@ export default function Mortality() {
                     colSpan="6"
                     className="text-center py-4"
                   >
-                    Loading mortality records...
+                    Loading mortality
+                    records...
                   </td>
                 </tr>
-              ) : filteredData.length === 0 ? (
+              ) : filteredData.length ===
+                0 ? (
                 <tr>
                   <td
                     colSpan="6"
                     className="text-center text-muted py-4"
                   >
-                    No mortality records found.
+                    No mortality
+                    records found.
                   </td>
                 </tr>
               ) : (
-                filteredData.map((item) => (
-                  <tr key={item.id}>
-                    {/* DATE */}
+                filteredData.map(
+                  (item) => (
+                    <tr
+                      key={
+                        item.id
+                      }
+                    >
+                      {/* DATE */}
 
-                    <td>
-                      {item.date}
-                    </td>
+                      <td>
+                        {
+                          item.date
+                        }
+                      </td>
 
-                    {/* FLOCK */}
+                      {/* FLOCK */}
 
-                    <td>
-                      <strong>
-                        {getFlockLabel(item)}
-                      </strong>
+                      <td>
+                        <strong>
+                          {getFlockLabel(
+                            item
+                          )}
+                        </strong>
 
-                      {item.flock_name && (
-                        <div className="small text-muted">
-                          {item.flock_name}
+                        {item.flock_name && (
+                          <div className="small text-muted">
+                            {
+                              item.flock_name
+                            }
+                          </div>
+                        )}
+                      </td>
+
+                      {/* QUANTITY */}
+
+                      <td>
+                        <strong className="text-danger">
+                          {
+                            item.quantity
+                          }
+                        </strong>
+                      </td>
+
+                      {/* CAUSE */}
+
+                      <td>
+                        {
+                          item.cause ||
+                          "-"
+                        }
+                      </td>
+
+                      {/* NOTES */}
+
+                      <td>
+                        {
+                          item.notes ||
+                          "-"
+                        }
+                      </td>
+
+                      {/* ACTIONS */}
+
+                      <td>
+                        <div className="btn-group btn-group-sm">
+                          <button
+                            type="button"
+                            className="btn btn-outline-primary"
+                            onClick={() =>
+                              editRecord(
+                                item
+                              )
+                            }
+                          >
+                            Edit
+                          </button>
+
+                          <button
+                            type="button"
+                            className="btn btn-outline-danger"
+                            onClick={() =>
+                              deleteRecord(
+                                item.id
+                              )
+                            }
+                          >
+                            Delete
+                          </button>
                         </div>
-                      )}
-                    </td>
-
-                    {/* QUANTITY */}
-
-                    <td>
-                      <strong className="text-danger">
-                        {item.quantity}
-                      </strong>
-                    </td>
-
-                    {/* CAUSE */}
-
-                    <td>
-                      {item.cause || "-"}
-                    </td>
-
-                    {/* NOTES */}
-
-                    <td>
-                      {item.notes || "-"}
-                    </td>
-
-                    {/* ACTIONS */}
-
-                    <td>
-                      <div className="btn-group btn-group-sm">
-                        <button
-                          type="button"
-                          className="btn btn-outline-primary"
-                          onClick={() =>
-                            editRecord(item)
-                          }
-                        >
-                          Edit
-                        </button>
-
-                        <button
-                          type="button"
-                          className="btn btn-outline-danger"
-                          onClick={() =>
-                            deleteRecord(
-                              item.id
-                            )
-                          }
-                        >
-                          Delete
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))
+                      </td>
+                    </tr>
+                  )
+                )
               )}
             </tbody>
           </table>

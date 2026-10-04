@@ -18,26 +18,26 @@ import Login from "./pages/Login";
 import Dashboard from "./pages/Dashboard";
 
 // Flocks
-import Flocks from "./pages/Flocks";
+import Flocks from "./pages/flocks/Flocks";
 import FlockDetails from "./pages/FlockDetails";
 
 // Production
-import EggProduction from "./pages/EggProduction";
+import EggProduction from "./pages/production/EggProduction";
 import EggInventory from "./pages/egg-inventory/EggInventory";
 
 // Feed
 import FeedManagement from "./pages/feed/FeedManagement";
 
 // Health
-import HealthManagement from "./pages/HealthManagement";
+import HealthManagement from "./pages/health/HealthManagement";
 import Mortality from "./pages/Mortality";
 
 // Sales & Customers
-import Sales from "./pages/Sales";
+import Sales from "./pages/sales/Sales";
 import Customers from "./pages/Customers";
 
 // Finance
-import Expenses from "./pages/Expenses";
+import Expenses from "./pages/expenses/Expenses";
 import Suppliers from "./pages/Suppliers";
 
 // Reports

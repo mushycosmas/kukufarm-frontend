@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from "react";
+
 import PageHeader from "../../components/common/PageHeader";
 import StatCard from "../../components/dashboard/StatCard";
 import api from "../../services/api";
@@ -25,6 +26,10 @@ function TrayValue({ eggs }) {
 }
 
 export default function EggInventory() {
+  // =========================================================
+  // STATE
+  // =========================================================
+
   const [inventory, setInventory] = useState({
     total_collected: 0,
     total_broken: 0,
@@ -38,6 +43,19 @@ export default function EggInventory() {
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [success, setSuccess] = useState("");
+
+  // =========================================================
+  // PDF REPORT STATE
+  // =========================================================
+
+  const [reportFromDate, setReportFromDate] = useState("");
+  const [reportToDate, setReportToDate] = useState("");
+  const [exporting, setExporting] = useState(false);
+
+  // =========================================================
+  // LOAD INVENTORY
+  // =========================================================
 
   useEffect(() => {
     loadInventory();
@@ -97,6 +115,162 @@ export default function EggInventory() {
     }
   };
 
+  // =========================================================
+  // EXPORT EGG INVENTORY PDF
+  // =========================================================
+  //
+  // Django generates the PDF.
+  //
+  // Endpoint:
+  //
+  // GET /api/reports/egg-inventory/pdf/
+  //
+  // Parameters:
+  //
+  // from_date=YYYY-MM-DD
+  // to_date=YYYY-MM-DD
+  //
+  // The PDF is opened in a new browser tab.
+  // It is NOT forced to download.
+  //
+  // =========================================================
+
+  const exportPDF = async () => {
+    setError("");
+    setSuccess("");
+
+    // -------------------------------------------------------
+    // VALIDATE FROM DATE
+    // -------------------------------------------------------
+
+    if (!reportFromDate) {
+      setError(
+        "Please select the report start date."
+      );
+      return;
+    }
+
+    // -------------------------------------------------------
+    // VALIDATE TO DATE
+    // -------------------------------------------------------
+
+    if (!reportToDate) {
+      setError(
+        "Please select the report end date."
+      );
+      return;
+    }
+
+    // -------------------------------------------------------
+    // VALIDATE DATE RANGE
+    // -------------------------------------------------------
+
+    if (reportFromDate > reportToDate) {
+      setError(
+        "Start date cannot be after the end date."
+      );
+      return;
+    }
+
+    try {
+      setExporting(true);
+
+      // -----------------------------------------------------
+      // REQUEST PDF FROM DJANGO
+      // -----------------------------------------------------
+
+      const response = await api.get(
+        "/reports/egg-inventory/pdf/",
+        {
+          params: {
+            from_date: reportFromDate,
+            to_date: reportToDate,
+          },
+
+          responseType: "blob",
+        }
+      );
+
+      // -----------------------------------------------------
+      // CREATE PDF BLOB
+      // -----------------------------------------------------
+
+      const blob = new Blob(
+        [response.data],
+        {
+          type: "application/pdf",
+        }
+      );
+
+      // -----------------------------------------------------
+      // CREATE TEMPORARY BLOB URL
+      // -----------------------------------------------------
+
+      const pdfUrl =
+        window.URL.createObjectURL(blob);
+
+      // -----------------------------------------------------
+      // OPEN PDF IN NEW TAB
+      // -----------------------------------------------------
+
+      const newWindow = window.open(
+        pdfUrl,
+        "_blank"
+      );
+
+      // -----------------------------------------------------
+      // CHECK POPUP BLOCKER
+      // -----------------------------------------------------
+
+      if (!newWindow) {
+        setError(
+          "The PDF could not be opened because your browser blocked the new tab. Please allow pop-ups for this site."
+        );
+
+        window.URL.revokeObjectURL(pdfUrl);
+
+        return;
+      }
+
+      // -----------------------------------------------------
+      // SUCCESS MESSAGE
+      // -----------------------------------------------------
+
+      setSuccess(
+        "Egg inventory PDF report opened successfully."
+      );
+
+      // -----------------------------------------------------
+      // CLEANUP
+      // -----------------------------------------------------
+
+      setTimeout(() => {
+        window.URL.revokeObjectURL(pdfUrl);
+      }, 30000);
+    } catch (err) {
+      console.error(
+        "Failed to export egg inventory PDF:",
+        err
+      );
+
+      console.error(
+        "PDF response:",
+        err.response?.data
+      );
+
+      setError(
+        err.response?.data?.detail ||
+          "Failed to generate egg inventory PDF report."
+      );
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  // =========================================================
+  // RENDER
+  // =========================================================
+
   return (
     <>
       <PageHeader
@@ -116,6 +290,7 @@ export default function EggInventory() {
                   role="status"
                   aria-hidden="true"
                 />
+
                 Loading...
               </>
             ) : (
@@ -128,10 +303,16 @@ export default function EggInventory() {
         }
       />
 
-      {/* ERROR */}
+      {/* =====================================================
+          ERROR MESSAGE
+      ====================================================== */}
+
       {error && (
         <div className="alert alert-danger d-flex justify-content-between align-items-center">
-          <span>{error}</span>
+          <span>
+            <strong>Error:</strong>{" "}
+            {error}
+          </span>
 
           <button
             type="button"
@@ -143,10 +324,25 @@ export default function EggInventory() {
         </div>
       )}
 
-      {/* SUMMARY */}
+      {/* =====================================================
+          SUCCESS MESSAGE
+      ====================================================== */}
+
+      {success && (
+        <div className="alert alert-success">
+          <i className="bi bi-check-circle me-2" />
+          {success}
+        </div>
+      )}
+
+      {/* =====================================================
+          SUMMARY
+      ====================================================== */}
+
       <div className="stats-grid">
 
         {/* CURRENT STOCK */}
+
         <StatCard
           title="Current Egg Stock"
           value={
@@ -168,6 +364,7 @@ export default function EggInventory() {
         />
 
         {/* EGGS COLLECTED */}
+
         <StatCard
           title="Eggs Collected"
           value={
@@ -188,6 +385,7 @@ export default function EggInventory() {
         />
 
         {/* EGGS SOLD */}
+
         <StatCard
           title="Eggs Sold"
           value={
@@ -209,6 +407,7 @@ export default function EggInventory() {
         />
 
         {/* BROKEN EGGS */}
+
         <StatCard
           title="Broken Eggs"
           value={
@@ -230,6 +429,7 @@ export default function EggInventory() {
         />
 
         {/* REJECTED EGGS */}
+
         <StatCard
           title="Rejected Eggs"
           value={
@@ -250,6 +450,7 @@ export default function EggInventory() {
         />
 
         {/* TOTAL TRAYS */}
+
         <StatCard
           title="Total Trays"
           value={formatNumber(
@@ -260,8 +461,137 @@ export default function EggInventory() {
         />
       </div>
 
-      {/* INVENTORY INFORMATION */}
+      {/* =====================================================
+          EGG INVENTORY PDF REPORT
+      ====================================================== */}
+
+      <div className="card shadow-sm border-0 mt-4 mb-4">
+
+        {/* HEADER */}
+
+        <div className="card-header bg-white">
+          <div className="d-flex align-items-center justify-content-between">
+
+            <div>
+              <h5 className="mb-1">
+                <i className="bi bi-file-earmark-pdf me-2 text-danger" />
+
+                Egg Inventory Report
+              </h5>
+
+              <small className="text-muted">
+                Generate a professional PDF report
+                for a selected date range.
+              </small>
+            </div>
+
+          </div>
+        </div>
+
+        {/* BODY */}
+
+        <div className="card-body">
+
+          <div className="row g-3 align-items-end">
+
+            {/* FROM DATE */}
+
+            <div className="col-md-4">
+              <label
+                htmlFor="eggInventoryReportFromDate"
+                className="form-label fw-semibold"
+              >
+                From Date
+              </label>
+
+              <input
+                id="eggInventoryReportFromDate"
+                type="date"
+                className="form-control"
+                value={reportFromDate}
+                onChange={(e) =>
+                  setReportFromDate(
+                    e.target.value
+                  )
+                }
+              />
+            </div>
+
+            {/* TO DATE */}
+
+            <div className="col-md-4">
+              <label
+                htmlFor="eggInventoryReportToDate"
+                className="form-label fw-semibold"
+              >
+                To Date
+              </label>
+
+              <input
+                id="eggInventoryReportToDate"
+                type="date"
+                className="form-control"
+                value={reportToDate}
+                onChange={(e) =>
+                  setReportToDate(
+                    e.target.value
+                  )
+                }
+              />
+            </div>
+
+            {/* OPEN PDF */}
+
+            <div className="col-md-4">
+              <button
+                type="button"
+                className="btn btn-danger w-100"
+                onClick={exportPDF}
+                disabled={exporting}
+              >
+                {exporting ? (
+                  <>
+                    <span
+                      className="spinner-border spinner-border-sm me-2"
+                      role="status"
+                      aria-hidden="true"
+                    />
+
+                    Generating PDF...
+                  </>
+                ) : (
+                  <>
+                    <i className="bi bi-file-earmark-pdf me-2" />
+
+                    Open Egg Inventory PDF
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+
+          {/* REPORT INFORMATION */}
+
+          <div className="mt-3">
+            <small className="text-muted">
+              <i className="bi bi-info-circle me-1" />
+
+              The report is generated by the Django
+              backend and opens in a new browser tab.
+              It includes egg inventory information
+              between the selected dates.
+            </small>
+          </div>
+
+        </div>
+      </div>
+
+      {/* =====================================================
+          INVENTORY INFORMATION
+      ====================================================== */}
+
       <div className="table-card mt-4">
+
         <div className="p-4">
 
           <div className="d-flex justify-content-between align-items-center mb-3">
@@ -320,6 +650,7 @@ export default function EggInventory() {
                 <tbody>
 
                   {/* CURRENT STOCK */}
+
                   <tr>
                     <td>
                       <strong>
@@ -357,6 +688,7 @@ export default function EggInventory() {
                   </tr>
 
                   {/* COLLECTED */}
+
                   <tr>
                     <td>
                       Eggs Collected
@@ -384,6 +716,7 @@ export default function EggInventory() {
                   </tr>
 
                   {/* SOLD */}
+
                   <tr>
                     <td>
                       Eggs Sold
@@ -413,6 +746,7 @@ export default function EggInventory() {
                   </tr>
 
                   {/* BROKEN */}
+
                   <tr>
                     <td>
                       Broken Eggs
@@ -440,6 +774,7 @@ export default function EggInventory() {
                   </tr>
 
                   {/* REJECTED */}
+
                   <tr>
                     <td>
                       Rejected Eggs
@@ -467,6 +802,7 @@ export default function EggInventory() {
                   </tr>
 
                   {/* TRAYS */}
+
                   <tr>
                     <td>
                       <strong>
@@ -490,6 +826,7 @@ export default function EggInventory() {
                   </tr>
 
                   {/* TOTAL PRODUCTION */}
+
                   <tr>
                     <td>
                       <strong>
@@ -521,7 +858,6 @@ export default function EggInventory() {
                   </tr>
 
                 </tbody>
-
               </table>
 
             </div>
@@ -530,7 +866,10 @@ export default function EggInventory() {
         </div>
       </div>
 
-      {/* STOCK CALCULATION */}
+      {/* =====================================================
+          STOCK CALCULATION
+      ====================================================== */}
+
       <div className="alert alert-success mt-4">
 
         <div className="d-flex">
@@ -586,7 +925,10 @@ export default function EggInventory() {
 
       </div>
 
-      {/* INFORMATION */}
+      {/* =====================================================
+          INFORMATION
+      ====================================================== */}
+
       <div className="alert alert-info mt-4">
 
         <div className="d-flex">

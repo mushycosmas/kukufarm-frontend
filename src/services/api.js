@@ -15,9 +15,6 @@ const REFRESH_TOKEN_KEY = "kukufarm_refresh";
 
 const api = axios.create({
   baseURL: API_BASE_URL,
-  headers: {
-    "Content-Type": "application/json",
-  },
 });
 
 /*
@@ -26,6 +23,19 @@ const api = axios.create({
 |--------------------------------------------------------------------------
 |
 | Automatically attach the JWT access token to every API request.
+|
+| IMPORTANT:
+| We intentionally DO NOT set Content-Type here.
+|
+| Axios will automatically use:
+|
+| application/json
+|
+| for normal JSON requests, and:
+|
+| multipart/form-data; boundary=...
+|
+| when FormData is sent.
 |
 */
 
@@ -40,6 +50,28 @@ api.interceptors.request.use(
 
       config.headers.Authorization =
         `Bearer ${accessToken}`;
+    }
+
+    /*
+     * IMPORTANT:
+     * Do not manually set Content-Type.
+     *
+     * This allows Axios/browser to correctly detect
+     * FormData uploads such as farm logo images.
+     */
+    if (
+      typeof FormData !== "undefined" &&
+      config.data instanceof FormData
+    ) {
+      /*
+       * If Axios inherited Content-Type from somewhere,
+       * remove it so the browser can add the multipart
+       * boundary automatically.
+       */
+      if (config.headers) {
+        delete config.headers["Content-Type"];
+        delete config.headers["content-type"];
+      }
     }
 
     return config;
@@ -115,6 +147,12 @@ const redirectToLogin = () => {
     window.location.href = "/login";
   }
 };
+
+/*
+|--------------------------------------------------------------------------
+| Response Interceptor
+|--------------------------------------------------------------------------
+*/
 
 api.interceptors.response.use(
   (response) => {
@@ -214,7 +252,7 @@ api.interceptors.response.use(
     try {
       /*
        * IMPORTANT:
-       * Use axios directly here instead of `api.post()`
+       * Use axios directly here instead of api.post()
        * to avoid triggering this interceptor again.
        */
       const response = await axios.post(

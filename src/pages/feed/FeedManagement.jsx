@@ -144,11 +144,28 @@ export default function FeedManagement() {
   const [error, setError] =
     useState("");
 
+  const [success, setSuccess] =
+    useState("");
+
   const [search, setSearch] =
     useState("");
 
   const [activeTab, setActiveTab] =
     useState("inventory");
+
+
+  // ==========================================================
+  // PDF EXPORT STATE
+  // ==========================================================
+
+  const [exporting, setExporting] =
+    useState(false);
+
+  const [reportFromDate, setReportFromDate] =
+    useState("");
+
+  const [reportToDate, setReportToDate] =
+    useState("");
 
 
   // ==========================================================
@@ -384,6 +401,7 @@ export default function FeedManagement() {
 
     setSaving(true);
     setError("");
+    setSuccess("");
 
     try {
 
@@ -553,6 +571,12 @@ export default function FeedManagement() {
         "inventory"
       );
 
+      setSuccess(
+        editing
+          ? "Feed movement updated successfully."
+          : "Feed movement saved successfully."
+      );
+
     } catch (err) {
 
       console.error(
@@ -681,6 +705,7 @@ export default function FeedManagement() {
 
       setDeleting(true);
       setError("");
+      setSuccess("");
 
 
       const endpoint =
@@ -709,6 +734,10 @@ export default function FeedManagement() {
 
       await loadData();
 
+      setSuccess(
+        "Feed movement deleted successfully."
+      );
+
     } catch (err) {
 
       console.error(
@@ -723,6 +752,177 @@ export default function FeedManagement() {
     } finally {
 
       setDeleting(false);
+
+    }
+  }
+
+
+  // ==========================================================
+  // EXPORT FEED PDF
+  // ==========================================================
+
+  async function exportPDF() {
+
+    setError("");
+    setSuccess("");
+
+
+    // --------------------------------------------------------
+    // START DATE VALIDATION
+    // --------------------------------------------------------
+
+    if (!reportFromDate) {
+
+      setError(
+        "Please select the report start date."
+      );
+
+      return;
+    }
+
+
+    // --------------------------------------------------------
+    // END DATE VALIDATION
+    // --------------------------------------------------------
+
+    if (!reportToDate) {
+
+      setError(
+        "Please select the report end date."
+      );
+
+      return;
+    }
+
+
+    // --------------------------------------------------------
+    // DATE RANGE VALIDATION
+    // --------------------------------------------------------
+
+    if (
+      reportFromDate >
+      reportToDate
+    ) {
+
+      setError(
+        "Start date cannot be after the end date."
+      );
+
+      return;
+    }
+
+
+    try {
+
+      setExporting(true);
+
+
+      const response =
+        await api.get(
+          "/reports/feed/pdf/",
+          {
+            params: {
+              from_date:
+                reportFromDate,
+
+              to_date:
+                reportToDate,
+            },
+
+            responseType:
+              "blob",
+          }
+        );
+
+
+      // ------------------------------------------------------
+      // CREATE PDF BLOB
+      // ------------------------------------------------------
+
+      const blob =
+        new Blob(
+          [response.data],
+          {
+            type:
+              "application/pdf",
+          }
+        );
+
+
+      // ------------------------------------------------------
+      // CREATE PDF URL
+      // ------------------------------------------------------
+
+      const pdfUrl =
+        window.URL.createObjectURL(
+          blob
+        );
+
+
+      // ------------------------------------------------------
+      // OPEN PDF IN NEW TAB
+      // ------------------------------------------------------
+
+      const newWindow =
+        window.open(
+          pdfUrl,
+          "_blank"
+        );
+
+
+      // ------------------------------------------------------
+      // POPUP BLOCKED
+      // ------------------------------------------------------
+
+      if (!newWindow) {
+
+        setError(
+          "The PDF could not be opened because your browser blocked the new tab. Please allow pop-ups for this site."
+        );
+
+        window.URL.revokeObjectURL(
+          pdfUrl
+        );
+
+        return;
+      }
+
+
+      // ------------------------------------------------------
+      // SUCCESS
+      // ------------------------------------------------------
+
+      setSuccess(
+        "Feed PDF report opened successfully."
+      );
+
+
+      // ------------------------------------------------------
+      // CLEANUP OBJECT URL
+      // ------------------------------------------------------
+
+      setTimeout(() => {
+
+        window.URL.revokeObjectURL(
+          pdfUrl
+        );
+
+      }, 30000);
+
+    } catch (err) {
+
+      console.error(
+        "Failed to export feed PDF:",
+        err
+      );
+
+      setError(
+        getErrorMessage(err)
+      );
+
+    } finally {
+
+      setExporting(false);
 
     }
   }
@@ -986,6 +1186,30 @@ export default function FeedManagement() {
 
 
       {/* ======================================================
+          SUCCESS
+      ====================================================== */}
+
+      {success && (
+
+        <div className="alert alert-success d-flex justify-content-between align-items-center">
+
+          <span>
+            {success}
+          </span>
+
+          <button
+            type="button"
+            className="btn-close"
+            onClick={() =>
+              setSuccess("")
+            }
+          />
+
+        </div>
+      )}
+
+
+      {/* ======================================================
           SUMMARY
       ====================================================== */}
 
@@ -1018,6 +1242,154 @@ export default function FeedManagement() {
           openAddStock()
         }
       />
+
+
+      {/* ======================================================
+          FEED PDF REPORT
+      ====================================================== */}
+
+      <div className="card shadow-sm border-0 mb-4">
+
+        <div className="card-body">
+
+          <div className="d-flex justify-content-between align-items-center mb-3">
+
+            <div>
+
+              <h5 className="mb-1">
+
+                <i className="bi bi-file-earmark-pdf me-2" />
+
+                Feed Report
+
+              </h5>
+
+              <small className="text-muted">
+
+                Select a date range to generate
+                the feed PDF report.
+
+              </small>
+
+            </div>
+
+          </div>
+
+
+          <div className="row g-3 align-items-end">
+
+            {/* ------------------------------------------------
+                FROM DATE
+            ------------------------------------------------- */}
+
+            <div className="col-md-4">
+
+              <label
+                htmlFor="reportFromDate"
+                className="form-label fw-semibold"
+              >
+                From Date
+              </label>
+
+              <input
+                id="reportFromDate"
+                type="date"
+                className="form-control"
+                value={
+                  reportFromDate
+                }
+                onChange={(e) =>
+                  setReportFromDate(
+                    e.target.value
+                  )
+                }
+              />
+
+            </div>
+
+
+            {/* ------------------------------------------------
+                TO DATE
+            ------------------------------------------------- */}
+
+            <div className="col-md-4">
+
+              <label
+                htmlFor="reportToDate"
+                className="form-label fw-semibold"
+              >
+                To Date
+              </label>
+
+              <input
+                id="reportToDate"
+                type="date"
+                className="form-control"
+                value={
+                  reportToDate
+                }
+                onChange={(e) =>
+                  setReportToDate(
+                    e.target.value
+                  )
+                }
+              />
+
+            </div>
+
+
+            {/* ------------------------------------------------
+                EXPORT BUTTON
+            ------------------------------------------------- */}
+
+            <div className="col-md-4">
+
+              <button
+                type="button"
+                className="btn btn-danger w-100"
+                onClick={
+                  exportPDF
+                }
+                disabled={
+                  exporting
+                }
+              >
+
+                {exporting ? (
+
+                  <>
+
+                    <span
+                      className="spinner-border spinner-border-sm me-2"
+                      role="status"
+                      aria-hidden="true"
+                    />
+
+                    Generating PDF...
+
+                  </>
+
+                ) : (
+
+                  <>
+
+                    <i className="bi bi-file-earmark-pdf me-2" />
+
+                    Open Feed PDF
+
+                  </>
+
+                )}
+
+              </button>
+
+            </div>
+
+          </div>
+
+        </div>
+
+      </div>
 
 
       {/* ======================================================
