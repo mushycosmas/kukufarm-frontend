@@ -34,7 +34,7 @@ import Mortality from "./pages/Mortality";
 
 // Sales & Customers
 import Sales from "./pages/sales/Sales";
-import Customers from "./pages/Customers";
+import Customers from "./pages/customers/Customers";
 
 // Finance
 import Expenses from "./pages/expenses/Expenses";
